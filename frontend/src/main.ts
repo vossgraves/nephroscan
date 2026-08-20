@@ -128,7 +128,7 @@ async function enrichCurrentReport(): Promise<void> {
     const message = isApiError(error) && error.disabled
       ? 'Optional multimodal review is disabled on this server.'
       : isApiError(error) && error.status === 429
-        ? 'OpenAI is rate limiting multimodal requests; please retry shortly.'
+        ? 'The AI provider is rate limiting multimodal requests; please retry shortly.'
         : 'Optional multimodal review is unavailable right now.';
     const disclaimer = isApiError(error) && error.disclaimer ? error.disclaimer : EDUCATIONAL_DISCLAIMER;
     renderImageUnavailable(reportBody, message, state.imageStatus, disclaimer);
@@ -146,7 +146,7 @@ function observeReports(): void {
 }
 
 function isExploratoryScan(scanType: string): boolean {
-  return scanType === 'other' || scanType === 'openai_vision' || scanType === 'other_ai';
+  return scanType === 'other' || scanType === 'other_ai';
 }
 
 async function runExploratoryAnalysis(button: HTMLButtonElement): Promise<void> {
@@ -286,7 +286,7 @@ async function submitChat(userText: string, elements: ChatElements): Promise<voi
     const message = disabled
       ? 'Optional AI assistant is disabled on this server; continuing with local guidance.'
       : isApiError(error) && error.status === 429
-        ? 'OpenAI is rate limiting requests; please retry shortly. Local guidance remains available.'
+        ? 'The AI provider is rate limiting requests; please retry shortly. Local guidance remains available.'
         : 'Optional AI assistant is unavailable; continuing with local guidance.';
     const disclaimer = isApiError(error) && error.disclaimer ? error.disclaimer : EDUCATIONAL_DISCLAIMER;
     setStatus(chatStatusElement(elements), state.chatStatus, `${message} ${disclaimer}`);

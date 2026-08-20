@@ -76,16 +76,15 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
 
 # ---------------------------------------------------------------------------
-# Optional OpenAI intelligence layer — server-side configuration only
+# Optional multimodal AI layer — server-side configuration only
 # ---------------------------------------------------------------------------
-# The key is read from the process environment and never leaves the server:
-# browsers only ever call the same-origin /api/ai/* endpoints. With
-# OPENAI_API_KEY unset the whole layer stays disabled and every /api/ai/*
-# request answers with an explicit "disabled" error instead of invented
-# content. OPENAI_BASE_URL keeps the layer swappable for a gateway later.
-# No extra process, thread, or resident model is introduced: the provider is
-# reached with a single bounded outbound HTTPS call per request, which keeps
-# small containers (e.g. Railway Trial, 1 GB RAM / 1 worker) comfortable.
+# Provider credentials are read from the process environment and never leave
+# the server. The browser only calls same-origin /api/ai/* endpoints. With
+# AI_API_KEY unset the layer stays disabled and returns explicit fallback
+# responses instead of invented clinical content.
+# The default provider is Gemini through its OpenAI-compatible chat endpoint.
+# No extra process, thread, or resident model is introduced.
+ 
 
 def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     """Read a bounded integer from the environment, falling back to default."""
@@ -97,12 +96,13 @@ def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
-OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
-OPENAI_BASE_URL = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").strip().rstrip("/")
-OPENAI_VISION_MODEL = (os.getenv("OPENAI_VISION_MODEL") or "gpt-5.6-luna").strip()
-OPENAI_CHAT_MODEL = (os.getenv("OPENAI_CHAT_MODEL") or "gpt-5.6-luna").strip()
-OPENAI_TIMEOUT = _env_int("OPENAI_TIMEOUT", 45, 5, 120)
-OPENAI_MAX_OUTPUT_TOKENS = _env_int("OPENAI_MAX_OUTPUT_TOKENS", 700, 128, 4096)
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
+AI_API_KEY = (os.getenv("AI_API_KEY") or "").strip()
+AI_BASE_URL = (os.getenv("AI_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta/openai").strip().rstrip("/")
+AI_VISION_MODEL = (os.getenv("AI_VISION_MODEL") or "gemini-3.5-flash-lite").strip()
+AI_CHAT_MODEL = (os.getenv("AI_CHAT_MODEL") or "gemini-3.5-flash-lite").strip()
+AI_TIMEOUT = _env_int("AI_TIMEOUT", 45, 5, 120)
+AI_MAX_OUTPUT_TOKENS = _env_int("AI_MAX_OUTPUT_TOKENS", 700, 128, 4096)
 
 # Hard input bounds for the AI routes, independent of the local model routes.
 AI_MAX_IMAGE_BYTES = _env_int("AI_MAX_IMAGE_BYTES", 4194304, 4096, 16777216)  # 4 MB
@@ -867,7 +867,7 @@ def _lab_build_report(tests: list[dict], context: dict, filename: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Optional OpenAI intelligence layer — helpers
+# Optional multimodal AI intelligence layer — helpers
 # ---------------------------------------------------------------------------
 
 _ai_log = logging.getLogger("nephroscan.ai")
@@ -943,7 +943,7 @@ _AI_SECRET_RE = re.compile(r"\b(?:sk|rk|pk|gsk|api)[-_][A-Za-z0-9\-_]{8,}")
 
 def _ai_enabled() -> bool:
     """True when a server-side API key is configured."""
-    return bool(OPENAI_API_KEY)
+    return bool(AI_API_KEY)
 
 
 def _ai_request_id() -> str:
@@ -958,8 +958,8 @@ def _ai_redact(text: str) -> str:
     """
     if not text:
         return ""
-    if OPENAI_API_KEY:
-        text = text.replace(OPENAI_API_KEY, "[redacted]")
+    if AI_API_KEY:
+        text = text.replace(AI_API_KEY, "[redacted]")
     text = _AI_SECRET_RE.sub("[redacted]", text)
     return re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", text)
 
@@ -967,10 +967,10 @@ def _ai_redact(text: str) -> str:
 def _ai_disabled_payload(request_id: str) -> dict:
     return {
         "status": "disabled",
-        "provider": "openai",
+        "provider": AI_PROVIDER,
         "code": "ai_disabled",
         "message": (
-            "AI assistance is not configured on this server. Set OPENAI_API_KEY "
+            "AI assistance is not configured on this server. Set AI_API_KEY "
             "to enable it — local model results and offline guidance remain "
             "available."
         ),
@@ -982,7 +982,7 @@ def _ai_disabled_payload(request_id: str) -> dict:
 def _ai_error_payload(request_id: str, code: str, message: str) -> dict:
     return {
         "status": "error",
-        "provider": "openai",
+        "provider": AI_PROVIDER,
         "code": code,
         "message": message,
         "disclaimer": AI_DISCLAIMER,
@@ -1161,8 +1161,8 @@ def _ai_call_model(
     json_object: bool,
 ) -> tuple[str | None, tuple[int, str, str] | None]:
     """POST one chat completion and return (text, error).
-    Speaks the OpenAI-compatible /chat/completions contract over `requests`,
-    so OPENAI_BASE_URL can be pointed at a gateway without code changes.
+    Speaks the provider's OpenAI-compatible `/chat/completions` contract over
+    `requests`; AI_BASE_URL keeps the provider swappable without code changes.
     `requests` is imported lazily to keep container start-up light.
     Secrets and image payloads are never logged.
     """
@@ -1171,18 +1171,18 @@ def _ai_call_model(
     except ImportError:
         return None, (503, "dependency_missing", "The 'requests' dependency is not installed on the server.")
 
-    url = f"{OPENAI_BASE_URL}/chat/completions"
+    url = f"{AI_BASE_URL}/chat/completions"
     payload = {
         "model": model,
         "messages": messages,
-        "max_completion_tokens": OPENAI_MAX_OUTPUT_TOKENS,
+        "max_completion_tokens": AI_MAX_OUTPUT_TOKENS,
         "temperature": 0.2,
     }
     if json_object:
         payload["response_format"] = {"type": "json_object"}
 
     headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Authorization": f"Bearer {AI_API_KEY}",
         "Content-Type": "application/json",
         "User-Agent": f"NephroScan-AI/{APP_VERSION}",
     }
@@ -1190,12 +1190,12 @@ def _ai_call_model(
     response = None
     for attempt in (1, 2):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=OPENAI_TIMEOUT)
+            response = requests.post(url, json=payload, headers=headers, timeout=AI_TIMEOUT)
         except requests.exceptions.Timeout:
             return None, (
                 504,
                 "upstream_timeout",
-                f"The AI provider did not respond within {OPENAI_TIMEOUT}s.",
+                f"The AI provider did not respond within {AI_TIMEOUT}s.",
             )
         except requests.exceptions.RequestException as exc:
             _ai_log.warning("id=%s upstream transport error: %s", request_id, type(exc).__name__)
@@ -1209,7 +1209,7 @@ def _ai_call_model(
             "id=%s upstream status=%s detail=%s", request_id, response.status_code, detail
         )
 
-        # Some OpenAI-compatible gateways reject JSON mode: retry once plainly.
+        # Some compatible providers reject JSON mode: retry once plainly.
         if response.status_code == 400 and json_object and attempt == 1 and "response_format" in detail:
             payload.pop("response_format", None)
             json_object = False
@@ -1309,8 +1309,8 @@ def _register_routes(application: Flask) -> None:
             "startup_time": application.config.get("STARTUP_TIME"),
             "ai": {
                 "enabled": _ai_enabled(),
-                "vision_model": OPENAI_VISION_MODEL if _ai_enabled() else None,
-                "chat_model": OPENAI_CHAT_MODEL if _ai_enabled() else None,
+                "vision_model": AI_VISION_MODEL if _ai_enabled() else None,
+                "chat_model": AI_CHAT_MODEL if _ai_enabled() else None,
             },
             "endpoints": [
                 "/api/health",
@@ -1567,17 +1567,17 @@ def _register_routes(application: Flask) -> None:
         finally:
             gc.collect()
 
-    # ---- Optional OpenAI intelligence layer ----
+    # ---- Optional multimodal AI intelligence layer ----
 
     @application.route("/api/ai/health", methods=["GET"])
     def api_ai_health():
         enabled = _ai_enabled()
         return jsonify({
             "status": "ok",
-            "provider": "openai",
+            "provider": AI_PROVIDER,
             "enabled": enabled,
-            "vision_model": OPENAI_VISION_MODEL if enabled else None,
-            "chat_model": OPENAI_CHAT_MODEL if enabled else None,
+            "vision_model": AI_VISION_MODEL if enabled else None,
+            "chat_model": AI_CHAT_MODEL if enabled else None,
             "max_image_bytes": AI_MAX_IMAGE_BYTES,
             "accepted_image_types": sorted(AI_ALLOWED_IMAGE_TYPES),
             "max_messages": AI_MAX_MESSAGES,
@@ -1636,7 +1636,7 @@ def _register_routes(application: Flask) -> None:
         try:
             text, error = _ai_call_model(
                 messages,
-                model=OPENAI_VISION_MODEL,
+                model=AI_VISION_MODEL,
                 request_id=request_id,
                 json_object=True,
             )
@@ -1672,13 +1672,13 @@ def _register_routes(application: Flask) -> None:
 
         _ai_log.info(
             "id=%s analyze-image status=ok scan_type=%s bytes=%d model=%s findings=%d latency_ms=%d",
-            request_id, scan_type or "-", size, OPENAI_VISION_MODEL,
+            request_id, scan_type or "-", size, AI_VISION_MODEL,
             len(findings), int((time.time() - started) * 1000),
         )
         return jsonify({
             "status": "ok",
-            "provider": "openai",
-            "model": OPENAI_VISION_MODEL,
+            "provider": AI_PROVIDER,
+            "model": AI_VISION_MODEL,
             "summary": summary,
             "findings": findings,
             "limitations": limitations,
@@ -1721,7 +1721,7 @@ def _register_routes(application: Flask) -> None:
 
         text, error = _ai_call_model(
             messages,
-            model=OPENAI_CHAT_MODEL,
+            model=AI_CHAT_MODEL,
             request_id=request_id,
             json_object=False,
         )
@@ -1736,13 +1736,13 @@ def _register_routes(application: Flask) -> None:
 
         _ai_log.info(
             "id=%s chat status=ok turns=%d chars=%d model=%s latency_ms=%d",
-            request_id, len(history), len(reply), OPENAI_CHAT_MODEL,
+            request_id, len(history), len(reply), AI_CHAT_MODEL,
             int((time.time() - started) * 1000),
         )
         return jsonify({
             "status": "ok",
-            "provider": "openai",
-            "model": OPENAI_CHAT_MODEL,
+            "provider": AI_PROVIDER,
+            "model": AI_CHAT_MODEL,
             "message": reply,
             "disclaimer": AI_DISCLAIMER,
             "request_id": request_id,

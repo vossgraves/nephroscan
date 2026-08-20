@@ -33,7 +33,7 @@ railway up
 railway domain
 ```
 
-Keep one replica and one Gunicorn worker on the Trial plan. The four local checkpoints occupy about 171 MiB on disk. On this workstation the full Flask process measured about 495 MiB after loading/warming all four models and about 499 MiB after one prediction; leave headroom for concurrent requests and verify the deployed peak in Railway metrics. OpenAI calls add no resident model; configure `OPENAI_API_KEY` as a Railway service variable to enable optional vision/chat assistance.
+Keep one replica and one Gunicorn worker on the Trial plan. The four local checkpoints occupy about 171 MiB on disk. On this workstation the full Flask process measured about 495 MiB after loading/warming all four models and about 499 MiB after one prediction; leave headroom for concurrent requests and verify the deployed peak in Railway metrics. Remote AI calls add no resident model; configure `AI_API_KEY` as a Railway service variable to enable optional vision/chat assistance.
 The GitHub release intentionally omits raw `.pth` checkpoints to avoid a 200MB source upload. The Dockerfile downloads the four required checkpoints from `MODEL_BASE_URL` when `models/` is empty; local non-Docker inference still needs those files in `models/`.
 
 
@@ -76,24 +76,30 @@ NephroScan-AI/
 ## Optional AI Assistance
 
 The four local ResNet-18 classifiers cover kidney, chest, brain, and heart
-scans only. An optional OpenAI-backed layer handles everything else: a plain
-description of an image outside those modalities, and conversational
-explanation of a report. It is **off by default**.
+scans only. The optional Gemini layer handles out-of-scope image descriptions
+and conversational report explanations through Google's OpenAI-compatible
+chat-completions endpoint. It is **off by default**.
 
 ### Enabling it
 
 ```bash
 # server-side only — never exposed to the browser
-export OPENAI_API_KEY=sk-your-key-here
-export OPENAI_VISION_MODEL=gpt-5.6-luna   # optional, cost-sensitive multimodal model
-export OPENAI_CHAT_MODEL=gpt-5.6-luna     # optional, cost-sensitive chat model
+export AI_PROVIDER=gemini
+export AI_API_KEY=your-gemini-key
+export AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+export AI_VISION_MODEL=gemini-3.5-flash-lite
+export AI_CHAT_MODEL=gemini-3.5-flash-lite
 python app.py
 ```
 
-`GET /api/ai/health` reports `{"enabled": true|false}` so the frontend can show
-the right affordance. `OPENAI_BASE_URL` accepts any OpenAI-compatible
-`/chat/completions` endpoint, so the deployment can be pointed at a gateway
-without code changes.
+Create a key in [Google AI Studio](https://aistudio.google.com/apikey). The
+free tier is rate-limited and Google states that free-tier content may be used
+to improve its products; use synthetic/demo images unless your privacy and
+consent requirements allow otherwise.
+
+`GET /api/ai/health` reports `{"enabled": true|false}` so the frontend can
+show the correct state. `AI_BASE_URL` remains configurable for another
+OpenAI-compatible provider without changing the browser contract.
 
 ### Contracts
 
@@ -101,7 +107,7 @@ without code changes.
 4 MB max), optional `scan_type`, optional `context`.
 
 ```json
-{ "status": "ok", "provider": "openai", "model": "gpt-5.6-luna",
+{ "status": "ok", "provider": "gemini", "model": "gemini-3.5-flash-lite",
   "summary": "...", "findings": ["..."], "limitations": ["..."],
   "next_steps": ["..."], "disclaimer": "...", "request_id": "ai_…" }
 ```
@@ -110,19 +116,19 @@ without code changes.
 content: string}`), optional `context`.
 
 ```json
-{ "status": "ok", "provider": "openai", "model": "gpt-5.6-luna",
+{ "status": "ok", "provider": "gemini", "model": "gemini-3.5-flash-lite",
   "message": "...", "disclaimer": "...", "request_id": "ai_…" }
 ```
 
 ### Behaviour when disabled or failing
 
 Every non-2xx answer is JSON with a `request_id` and **no** generated clinical
-content — the frontend must fall back to local guidance instead of showing
+content. The frontend keeps local guidance available instead of showing
 partial results.
 
 | Situation | HTTP | Body |
 |---|---|---|
-| No `OPENAI_API_KEY` | 503 | `status: "disabled"`, `code: "ai_disabled"` |
+| No `AI_API_KEY` | 503 | `status: "disabled"`, `code: "ai_disabled"` |
 | Bad upload (missing/corrupt/empty) | 400 | `status: "error"` |
 | Wrong file type (PDF, DICOM, …) | 415 | `code: "unsupported_type"` |
 | Image or request body too large | 413 | `code: "image_too_large"` / `payload_too_large` |
@@ -137,15 +143,16 @@ partial results.
 | `PORT` | 5000 | Server port |
 | `MODEL_DIR` | models | Model checkpoint directory |
 | `CORS_ORIGINS` | * | Allowed CORS origins |
-| `MAX_UPLOAD_BYTES` | 8388608 | Max upload size for the local model routes (8MB) |
+| `MAX_UPLOAD_BYTES` | 8388608 | Max upload size for local model routes |
 | `INFERENCE_TIMEOUT` | 30 | Inference timeout (seconds) |
-| `OPENAI_API_KEY` | *(unset)* | Enables `/api/ai/*`; server-side only |
-| `OPENAI_BASE_URL` | https://api.openai.com/v1 | OpenAI-compatible base URL (gateway-friendly) |
-| `OPENAI_VISION_MODEL` | gpt-5.6-luna | Model for `/api/ai/analyze-image` |
-| `OPENAI_CHAT_MODEL` | gpt-5.6-luna | Model for `/api/ai/chat` |
-| `OPENAI_TIMEOUT` | 45 | Outbound AI timeout, seconds (5–120) |
-| `OPENAI_MAX_OUTPUT_TOKENS` | 700 | AI response cap (128–4096) |
-| `AI_MAX_IMAGE_BYTES` | 4194304 | Max AI image upload (4MB) |
+| `AI_PROVIDER` | gemini | Provider label returned in AI responses |
+| `AI_API_KEY` | *(unset)* | Enables `/api/ai/*`; server-side only |
+| `AI_BASE_URL` | Gemini OpenAI-compatible endpoint | Provider API base URL |
+| `AI_VISION_MODEL` | gemini-3.5-flash-lite | Model for `/api/ai/analyze-image` |
+| `AI_CHAT_MODEL` | gemini-3.5-flash-lite | Model for `/api/ai/chat` |
+| `AI_TIMEOUT` | 45 | Outbound AI timeout, seconds (5–120) |
+| `AI_MAX_OUTPUT_TOKENS` | 700 | AI response cap (128–4096) |
+| `AI_MAX_IMAGE_BYTES` | 4194304 | Max AI image upload |
 | `AI_MAX_IMAGE_DIM` | 1024 | Longest edge sent to the provider |
 | `AI_MAX_JSON_BYTES` | 65536 | Max `/api/ai/chat` request body |
 | `AI_MAX_MESSAGES` | 20 | Newest conversation turns forwarded |
@@ -159,7 +166,7 @@ partial results.
 - Thermal proxy is labeled "VISUAL SIMULATION" — not an infrared measurement
 - No clinical diagnosis — all results are AI-assisted screening prototypes
 - See `DEMO_SCRIPT.md` for presentation guidelines
-- `OPENAI_API_KEY` stays on the server; the browser only calls same-origin
+- `AI_API_KEY` stays on the server; the browser only calls same-origin
   `/api/ai/*` routes and never receives a credential
 - AI prompts forbid diagnosis, prescribing, and certainty; they require stated
   uncertainty, clinician review, and emergency escalation for red-flag symptoms

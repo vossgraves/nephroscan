@@ -29,28 +29,27 @@ Browser (index.html)
 - **Provenance:** Every response includes model name, version, timestamp, device, and inference type
 - **Upload validation:** File type, size (`MAX_UPLOAD_BYTES`, 8 MB default), image integrity checks
 
-## Optional OpenAI Intelligence Layer (`/api/ai/*`)
+## Optional Gemini Intelligence Layer (`/api/ai/*`)
 
-The local classifiers only cover kidney, chest, brain, and heart scans. The AI
-layer covers the rest — describing an out-of-scope image, and answering
-questions about a report — and is inert unless `OPENAI_API_KEY` is set.
+The local classifiers only cover kidney, chest, brain, and heart scans. The
+Gemini layer covers the rest — describing an out-of-scope image and answering
+questions about a report — and is inert unless `AI_API_KEY` is set.
 
 ```
 Browser ──same-origin POST──► Flask /api/ai/*
                                  │  validate + bound + re-encode
                                  │  (key never leaves the server)
                                  ▼
-                        OPENAI_BASE_URL/chat/completions
+             Gemini OpenAI-compatible /chat/completions
 ```
 
 - **Disabled by default:** without a key both POST routes return
-  `503 {"status":"disabled","code":"ai_disabled"}` and the frontend keeps using
-  local model output and offline guidance. `GET /api/ai/health` exposes the flag.
+  `503 {"status":"disabled","code":"ai_disabled"}` and the frontend keeps
+  using local model output and offline guidance. `GET /api/ai/health` exposes the flag.
 - **Transport:** one bounded outbound HTTPS call per request via `requests`
-  (imported lazily), speaking the OpenAI-compatible `/chat/completions`
-  contract. `OPENAI_BASE_URL` re-points the layer at a gateway with no code
-  change. No extra process, thread, or resident model — one worker on a 1 GB
-  container is enough.
+  (imported lazily), using Gemini's OpenAI-compatible chat-completions endpoint.
+  `AI_BASE_URL` keeps the provider swappable without browser changes. No extra
+  process, thread, or resident model — one worker on a 1 GB container is enough.
 - **Image path:** JPG/PNG/WEBP only, ≤ `AI_MAX_IMAGE_BYTES`, verified with PIL,
   then re-encoded to a ≤ `AI_MAX_IMAGE_DIM` JPEG (this also strips EXIF) and
   sent as a base64 data URL. The encoded copy is dropped and `gc.collect()` runs
@@ -58,23 +57,16 @@ Browser ──same-origin POST──► Flask /api/ai/*
 - **Chat path:** JSON body ≤ `AI_MAX_JSON_BYTES`; roles restricted to
   `user`/`assistant`; the newest `AI_MAX_MESSAGES` turns are forwarded under a
   `AI_MAX_TOTAL_CHARS` budget; control characters are stripped. Caller context is
-  serialised, truncated to `AI_MAX_CONTEXT_CHARS`, and injected as a system
-  message explicitly labelled untrusted data rather than instructions.
-- **Prompt safety:** shared rules forbid diagnosis, certainty, and
-  prescribing; they require explicit uncertainty, "not visible in the input"
-  over guessing, clinician review, and immediate emergency care for red-flag
-  symptoms. Every response carries the educational disclaimer, and a fixed
-  limitation plus a fixed clinician/emergency next step are always appended to
-  the image result.
+  serialised, truncated to `AI_MAX_CONTEXT_CHARS`, and injected as untrusted data.
+- **Prompt safety:** shared rules forbid diagnosis, certainty, and prescribing;
+  they require explicit uncertainty, clinician review, and immediate emergency
+  care for red-flag symptoms. Every response carries the educational disclaimer.
 - **No fabrication:** `analyze-image` requires a parseable JSON object with a
-  non-empty `summary`; anything else becomes `502 upstream_malformed` with no
-  clinical fields at all. Provider faults map to explicit codes
-  (`upstream_auth`, `upstream_rate_limited` → 429, `upstream_timeout` → 504,
-  `upstream_unreachable`/`upstream_error`/`upstream_empty` → 502).
+  non-empty `summary`; malformed provider output becomes `502 upstream_malformed`
+  with no clinical fields. Provider faults map to explicit error codes.
 - **Observability:** each request gets an `ai_<hex>` request id returned to the
   client and logged with route, byte count, model, and latency. Image bytes,
-  message text, and credentials are never logged; upstream error bodies are
-  redacted (`_ai_redact`) because providers echo keys back in 401 messages.
+  message text, and credentials are never logged.
 
 ## Frontend (`frontend/index.html` + `frontend/src`)
 
