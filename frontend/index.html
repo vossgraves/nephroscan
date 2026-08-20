@@ -80,6 +80,7 @@
   --tap: 44px;
 
   --ease-out: cubic-bezier(.23, 1, .32, 1);
+  --ease-drawer: cubic-bezier(.32, .72, 0, 1);
   --ease-emph: cubic-bezier(.2, 0, 0, 1);
   --dur: .2s;
 }
@@ -221,8 +222,43 @@ i[class*="fa-"] {
   height: 100vh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  transition: transform .26s var(--ease-out);
+  transition: transform 320ms var(--ease-drawer);
+  will-change: transform;
   z-index: 50;
+}
+.ai-outage-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin-top: auto;
+  padding: var(--s-3);
+  border: 1px solid rgba(154, 106, 6, .22);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: .7rem;
+  line-height: 1.4;
+}
+
+.ai-outage-panel[hidden] {
+  display: none;
+}
+
+.ai-outage-panel i {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.ai-outage-panel strong {
+  display: block;
+  font-weight: 700;
+}
+
+.ai-outage-panel span {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
 }
 
 .sidebar .logo-group {
@@ -335,17 +371,24 @@ i[class*="fa-"] {
 }
 
 .sidebar-scrim {
-  display: none;
+  display: block;
   position: fixed;
   inset: 0;
   background: rgba(15, 32, 45, .48);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   z-index: 40;
   overscroll-behavior: contain;
   touch-action: none;
+  transition: opacity 220ms ease, visibility 0s linear 220ms;
 }
 
 .sidebar-scrim.show {
-  display: block;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
 }
 
 /* Drawer open must not leave the page scrollable underneath */
@@ -473,6 +516,10 @@ body:has(.sidebar-scrim.show) {
 }
 @keyframes dashboardEnter {
   from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes drawerItemIn {
+  from { opacity: 0; transform: translateX(-8px); }
   to { opacity: 1; transform: none; }
 }
 
@@ -2614,12 +2661,21 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     transform: translateX(-100%);
     visibility: hidden;
     box-shadow: var(--shadow-3);
-    transition: transform .26s var(--ease-out), visibility .26s linear;
+    transition: transform 320ms var(--ease-drawer), visibility 0s linear 320ms;
+    will-change: transform;
   }
   .sidebar.open {
     transform: none;
     visibility: visible;
+    transition-delay: 0s;
   }
+  .sidebar.open .nav-item {
+    animation: drawerItemIn 240ms var(--ease-drawer) both;
+  }
+  .sidebar.open .nav-item:nth-child(2) { animation-delay: 30ms; }
+  .sidebar.open .nav-item:nth-child(3) { animation-delay: 60ms; }
+  .sidebar.open .nav-item:nth-child(4) { animation-delay: 90ms; }
+  .sidebar.open .nav-item:nth-child(5) { animation-delay: 120ms; }
   .hamburger {
     display: flex;
   }
@@ -2824,6 +2880,13 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .view-dashboard.active > .card {
     animation-delay: 0ms !important;
   }
+  .sidebar,
+  .sidebar-scrim {
+    transition-delay: 0ms !important;
+  }
+  .sidebar.open .nav-item {
+    animation-delay: 0ms !important;
+  }
 }
 
 @media (forced-colors: active) {
@@ -2839,6 +2902,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .topbar,
   .sidebar,
   .ai-banner,
+  .ai-outage-panel,
   .ai-banner .chip,
   .pipeline .step,
   .toast,
@@ -2938,6 +3002,14 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
       <button class="nav-item" data-view="settings"><i class="fas fa-gear"></i> Settings</button>
     </nav>
 
+
+    <div class="ai-outage-panel" id="aiOutagePanel" hidden role="status" aria-live="polite">
+      <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+      <div>
+        <strong>AI-based analysis is down</strong>
+        <span>Some options won't work. Local scan analysis is still available.</span>
+      </div>
+    </div>
 
   </aside>
 

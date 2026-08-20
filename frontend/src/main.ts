@@ -2,7 +2,7 @@ import { analyzeImage, chat, getAiHealth } from './api.js';
 import type { ApiError, ImageAnalysisResponse } from './contracts.js';
 import { getChatElements, getImageInput, getReportBody, escapeHtml, readReportContext, setStatus } from './dom.js';
 import type { ChatElements } from './dom.js';
-import { addChatMessage, createFrontendState, imageRequestKey, resetChat } from './state.js';
+import { addChatMessage, createFrontendState, imageRequestKey, resetChat, type AiCapability } from './state.js';
 
 const state = createFrontendState();
 const EDUCATIONAL_DISCLAIMER = 'Optional AI assistance only. This educational screening prototype is not a diagnosis and does not replace review by a qualified healthcare professional.';
@@ -16,6 +16,7 @@ async function initializeAi(): Promise<void> {
   } catch {
     state.aiCapability = 'unavailable';
   }
+  renderAiCapabilityNotice(state.aiCapability);
   const reportBody = getReportBody();
   const reportText = reportBody?.textContent?.trim() || '';
   if (!reportBody || reportBody.querySelector('.placeholder') || !reportText || reportText.includes('Upload scans') || reportText.includes('Analysis in progress') || reportText.includes('Analysis Error')) return;
@@ -34,6 +35,24 @@ function ensureAiInitialized(): Promise<void> {
 
 function isApiError(error: unknown): error is ApiError {
   return error instanceof Error && error.name === 'ApiError';
+}
+
+function renderAiCapabilityNotice(capability: AiCapability): void {
+  const panel = document.getElementById('aiOutagePanel');
+  if (!panel) return;
+  const down = capability === 'disabled' || capability === 'unavailable';
+  panel.hidden = !down;
+  panel.setAttribute('aria-hidden', String(!down));
+  panel.dataset.aiCapability = capability;
+}
+
+function markAiUnavailable(error: unknown): void {
+  if (isApiError(error) && error.disabled) {
+    renderAiCapabilityNotice('disabled');
+    return;
+  }
+  if (isApiError(error) && error.status >= 400 && error.status < 500 && error.status !== 429) return;
+  renderAiCapabilityNotice('unavailable');
 }
 
 function imageStatusElement(reportBody: HTMLElement): HTMLElement {
@@ -73,6 +92,7 @@ function renderImageAnalysis(reportBody: HTMLElement, result: ImageAnalysisRespo
     </div>`;
   const status = imageStatusElement(reportBody);
   setStatus(status, 'ready', 'Optional multimodal review added. The existing local report remains the primary screening output.');
+  renderAiCapabilityNotice('enabled');
   reportBody.insertBefore(section, status);
 }
 
@@ -124,6 +144,7 @@ async function enrichCurrentReport(): Promise<void> {
     state.imageStatus = 'ready';
     renderImageAnalysis(reportBody, result);
   } catch (error) {
+    markAiUnavailable(error);
     state.imageStatus = isApiError(error) && error.disabled ? 'disabled' : 'error';
     const message = isApiError(error) && error.disabled
       ? 'Optional multimodal review is disabled on this server.'
@@ -180,6 +201,7 @@ async function runExploratoryAnalysis(button: HTMLButtonElement): Promise<void> 
     reportBody.innerHTML = '';
     renderImageAnalysis(reportBody, result);
   } catch (error) {
+    markAiUnavailable(error);
     state.imageStatus = isApiError(error) && error.disabled ? 'disabled' : 'error';
     const message = isApiError(error) && error.disabled
       ? 'Optional multimodal review is disabled on this server.'
@@ -280,7 +302,9 @@ async function submitChat(userText: string, elements: ChatElements): Promise<voi
     addChatMessage(state, { role: 'assistant', content: reply });
     replaceLatestLocalReply(elements, reply);
     setStatus(chatStatusElement(elements), 'ready', 'Optional AI assistant response received. Review it with a qualified professional.');
+    renderAiCapabilityNotice('enabled');
   } catch (error) {
+    markAiUnavailable(error);
     state.chatStatus = isApiError(error) && error.disabled ? 'disabled' : 'error';
     const disabled = isApiError(error) && error.disabled;
     const message = disabled
