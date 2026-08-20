@@ -3583,8 +3583,8 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <section class="view" id="view-assistant">
       <div class="card">
         <div class="section-heading"><i class="fas fa-comment-medical"></i> AI Assistant</div>
-        <p style="font-size:.8rem;color:#5a6b7a;margin-bottom:1rem;">Use the AI Health Guide in the sidebar for general health guidance, explaining lab terminology, diet and lifestyle habits, and preparing for a doctor visit.</p>
-        <button class="btn btn-primary" onclick="showView('health-guide')"><i class="fas fa-heart-pulse"></i> Open AI Health Guide</button>
+        <p style="font-size:.8rem;color:#5a6b7a;margin-bottom:1rem;">Ask the optional AI assistant about health topics, lab terminology, diet, lifestyle, or preparing for a doctor visit.</p>
+        <button type="button" class="btn btn-primary" onclick="showView('health-guide')"><i class="fas fa-comment-medical" aria-hidden="true"></i> Open AI Assistant</button>
       </div>
     </section>
 
@@ -5224,7 +5224,7 @@ body.ns-compact .ns-settings{
 <!-- ===================== AI HEALTH GUIDE VIEW ===================== -->
 <section class="view" id="view-health-guide">
   <div class="card">
-    <div class="section-heading"><i class="fas fa-heart-pulse"></i> AI Health Guide</div>
+    <div class="section-heading"><i class="fas fa-comment-medical" aria-hidden="true"></i> AI Assistant</div>
     <p class="hg-intro">Ask about health topics, lab terminology, diet, lifestyle, or preparing for a doctor visit.</p>
     <div id="healthGuideMessages" class="hg-messages" role="log" aria-live="polite" aria-label="Conversation"></div>
     <div id="healthGuideQuick" class="hg-quick" role="group" aria-label="Suggested questions">
@@ -5247,7 +5247,7 @@ body.ns-compact .ns-settings{
 <!-- ===================== END AI HEALTH GUIDE VIEW ===================== -->
 
 <!-- (floating NephroBot widget removed — AI Health Guide is now a sidebar page) -->
-<button class="health-guide-fab" id="healthGuideFab" aria-label="Open AI Health Guide" title="Open AI Health Guide"><i class="fas fa-heart-pulse"></i></button>
+<button class="health-guide-fab" id="healthGuideFab" aria-label="Open AI Assistant" title="Open AI Assistant"><i class="fas fa-comment-medical" aria-hidden="true"></i></button>
 
 
 <script>
