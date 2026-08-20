@@ -7,11 +7,19 @@ Medical imaging AI platform for expo demonstration. Educational prototype only �
 ### Local Development
 
 ```bash
-pip install -r requirements.txt
-python app.py
+# 1. Build the typed frontend module (frontend/dist/main.js)
+cd frontend && npm ci && npm run build && cd ..
+
+# 2. Run the Rust service; it serves the API and the frontend on one origin
+cargo run --release --manifest-path backend-rust/Cargo.toml
 ```
 
-Server starts at `http://localhost:5000`. Open in browser.
+Server starts at `http://localhost:8080`. Open in browser.
+
+`MODEL_DIR` (default `models`) must contain `kidney.onnx`, `chest.onnx`,
+`brain.onnx`, `heart.onnx`, each modality's `<name>.json` manifest, and
+`models.json`. The ONNX graphs are exported from the trained checkpoints
+out-of-band and are never committed as raw `.pth` files.
 
 ### Docker
 
@@ -25,7 +33,9 @@ Push to GitHub. Render auto-deploys using `render.yaml`.
 
 ### Railway (Trial-friendly)
 
-This repo includes `railway.json` and a multi-stage `Dockerfile`. Railway builds the TypeScript frontend, serves the Flask app on its injected `$PORT`, and checks `/api/health` before routing traffic.
+This repo includes `railway.json` and a multi-stage `Dockerfile`. Railway
+builds the TypeScript frontend, compiles the Rust service, runs it on the
+injected `$PORT`, and checks `/api/health` before routing traffic.
 
 ```bash
 railway init --name nephroscan
@@ -33,24 +43,27 @@ railway up
 railway domain
 ```
 
-Keep one replica and one Gunicorn worker on the Trial plan. The four local checkpoints occupy about 171 MiB on disk. On this workstation the full Flask process measured about 495 MiB after loading/warming all four models and about 499 MiB after one prediction; leave headroom for concurrent requests and verify the deployed peak in Railway metrics. Remote AI calls add no resident model; configure `AI_API_KEY` as a Railway service variable to enable optional vision/chat assistance.
-The GitHub release intentionally omits raw `.pth` checkpoints to avoid a 200MB source upload. The Dockerfile downloads the four required checkpoints from `MODEL_BASE_URL` when `models/` is empty; local non-Docker inference still needs those files in `models/`.
-
+Keep one replica and `TOKIO_WORKER_THREADS=1` on free/trial plans. The four
+exported ONNX graphs are the only model artifacts in the image and the runtime
+stage asserts they stay under 500 MB. Remote AI calls add no resident model;
+configure `AI_API_KEY` as a service variable to enable optional vision/chat
+assistance.
 
 ## Project Structure
 
 ```
 NephroScan-AI/
-├── app.py                 # Unified Flask server (API + frontend)
-├── ai/gradcam.py          # Grad-CAM explainability
-├── models/                # ResNet-18 .pth checkpoints
-│   ├── kidney_stone_resnet18.pth
-│   ├── chest_pneumonia_resnet18.pth
-│   ├── brain_mri_resnet18.pth
-│   └── heart_cardiomegaly_resnet18_improved.pth
+├── backend-rust/          # Axum + ONNX Runtime service (API + static frontend)
+│   ├── Cargo.toml
+│   └── src/
+├── models/                # Exported ONNX graphs + JSON manifests (not in Git)
+│   ├── kidney.onnx / kidney.json
+│   ├── chest.onnx  / chest.json
+│   ├── brain.onnx  / brain.json
+│   ├── heart.onnx  / heart.json
+│   └── models.json
 ├── frontend/index.html    # HTML shell and visual system
 ├── frontend/src/          # Strict TypeScript browser integration
-├── requirements.txt
 ├── Dockerfile
 ├── railway.json
 ├── docker-compose.yml
@@ -68,14 +81,21 @@ NephroScan-AI/
 | `/api/predict-brain` | POST | Brain MRI classification |
 | `/api/predict-heart` | POST | Heart cardiomegaly classification |
 | `/api/explain` | POST | Grad-CAM attention heatmap |
-| `/api/lab/analyze` | POST | Lab report OCR + guidance |
+| `/api/lab/health` | GET | Whether laboratory extraction is available |
+| `/api/lab/analyze` | POST | Lab report intake + guidance (see note below) |
 | `/api/ai/health` | GET | Whether the optional AI layer is configured |
 | `/api/ai/analyze-image` | POST | Optional AI description of an image outside the trained modalities |
 | `/api/ai/chat` | POST | Optional AI Q&A about a health report / result |
 
+`/api/lab/health` reports `ocr_available: false` in this Rust build: the
+service accepts a lab upload and returns a `needs_review` envelope with an
+empty `tests` array instead of running OCR. The Lab Test Analysis view stays
+usable — enter the values manually in the editable table before generating
+the report.
+
 ## Optional AI Assistance
 
-The four local ResNet-18 classifiers cover kidney, chest, brain, and heart
+The four local ONNX classifiers cover kidney, chest, brain, and heart
 scans only. The optional Gemini layer handles out-of-scope image descriptions
 and conversational report explanations through Google's OpenAI-compatible
 chat-completions endpoint. It is **off by default**.
@@ -89,7 +109,7 @@ export AI_API_KEY=your-gemini-key
 export AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 export AI_VISION_MODEL=gemini-3.5-flash-lite
 export AI_CHAT_MODEL=gemini-3.5-flash-lite
-python app.py
+cargo run --release --manifest-path backend-rust/Cargo.toml
 ```
 
 Create a key in [Google AI Studio](https://aistudio.google.com/apikey). The
@@ -140,30 +160,25 @@ partial results.
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | 5000 | Server port |
-| `MODEL_DIR` | models | Model checkpoint directory |
-| `CORS_ORIGINS` | * | Allowed CORS origins |
-| `MAX_UPLOAD_BYTES` | 8388608 | Max upload size for local model routes |
-| `INFERENCE_TIMEOUT` | 30 | Inference timeout (seconds) |
+| `PORT` | 8080 | Server port (Render/Railway inject their own) |
+| `MODEL_DIR` | models | Directory of exported `.onnx` graphs + `.json` manifests |
+| `FRONTEND_DIR` | frontend | Directory served for same-origin static assets |
 | `AI_PROVIDER` | gemini | Provider label returned in AI responses |
 | `AI_API_KEY` | *(unset)* | Enables `/api/ai/*`; server-side only |
 | `AI_BASE_URL` | Gemini OpenAI-compatible endpoint | Provider API base URL |
 | `AI_VISION_MODEL` | gemini-3.5-flash-lite | Model for `/api/ai/analyze-image` |
 | `AI_CHAT_MODEL` | gemini-3.5-flash-lite | Model for `/api/ai/chat` |
 | `AI_TIMEOUT` | 45 | Outbound AI timeout, seconds (5–120) |
-| `AI_MAX_OUTPUT_TOKENS` | 700 | AI response cap (128–4096) |
-| `AI_MAX_IMAGE_BYTES` | 4194304 | Max AI image upload |
-| `AI_MAX_IMAGE_DIM` | 1024 | Longest edge sent to the provider |
-| `AI_MAX_JSON_BYTES` | 65536 | Max `/api/ai/chat` request body |
-| `AI_MAX_MESSAGES` | 20 | Newest conversation turns forwarded |
-| `AI_MAX_MESSAGE_CHARS` | 4000 | Per-message character limit |
-| `AI_MAX_TOTAL_CHARS` | 24000 | Conversation character budget |
-| `AI_MAX_CONTEXT_CHARS` | 4000 | Report-context character limit |
+
+Request bounds are compile-time constants in `backend-rust/src/main.rs`:
+16 MB per local scan upload, 4 MB per AI image, 64 KB per `/api/ai/chat`
+body, 20 forwarded turns, 4000 chars per message, 24 000 chars per
+conversation, 4000 chars of report context.
 
 ## Safety
 
 - Every result includes provenance metadata (model, timestamp, inference type)
-- Thermal proxy is labeled "VISUAL SIMULATION" — not an infrared measurement
+- Grad-CAM attention maps are labeled as model attention, not a measurement
 - No clinical diagnosis — all results are AI-assisted screening prototypes
 - See `DEMO_SCRIPT.md` for presentation guidelines
 - `AI_API_KEY` stays on the server; the browser only calls same-origin

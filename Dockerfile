@@ -7,54 +7,51 @@ COPY frontend/tsconfig.json ./tsconfig.json
 COPY frontend/src ./src
 RUN npm run build
 
-FROM python:3.11-slim
+FROM rust:1.98-bookworm AS rust-build
+
+WORKDIR /src
+COPY rust-toolchain.toml ./rust-toolchain.toml
+COPY backend-rust/Cargo.toml backend-rust/Cargo.toml
+COPY backend-rust/src backend-rust/src
+RUN CARGO_BUILD_JOBS=1 cargo build --release --manifest-path backend-rust/Cargo.toml
+
+FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
-
-# Install system dependencies for OpenCV, Pillow, Tesseract OCR, and PDF rendering
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    libgl1 \
-    libglib2.0-0 \
-    libgomp1 \
-    tesseract-ocr \
-    poppler-utils \
+    ca-certificates curl tesseract-ocr poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for Docker layer caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
-
-# Copy application code and the compiled typed browser module
-COPY . .
-ARG MODEL_BASE_URL=https://raw.githubusercontent.com/sathyadharma082010-source/nephroscan-ai/main/models
-RUN mkdir -p models && set -eux; \
-    for model in \
-      kidney_stone_resnet18.pth \
-      chest_pneumonia_resnet18.pth \
-      brain_mri_resnet18.pth \
-      heart_cardiomegaly_resnet18_improved.pth; do \
-      if [ ! -s "models/$model" ]; then \
-        curl --fail --location --retry 3 --silent --show-error "$MODEL_BASE_URL/$model" -o "models/$model"; \
-      fi; \
-    done
+COPY --from=rust-build /src/backend-rust/target/release/nephroscan-backend ./nephroscan-backend
 COPY --from=frontend-build /frontend/dist ./frontend/dist
+COPY frontend/index.html ./frontend/index.html
+COPY frontend/landing.html ./frontend/landing.html
+COPY frontend/demo_assets ./frontend/demo_assets
 
-# Create models directory if not present
-RUN mkdir -p models
+# ONNX graphs and JSON manifests are generated outside this image from the
+# trained checkpoints.  They are the only model artifacts copied at runtime;
+# no Python, checkpoints, or credentials are part of the service image.
+COPY models/ ./models/
+RUN set -eu; \
+    for model in kidney chest brain heart; do \
+      test -s "models/$model.onnx"; \
+      test -s "models/$model.json"; \
+    done; \
+    test -s models/models.json; \
+    size_mb="$(du -sm models | cut -f1)"; \
+    test "$size_mb" -le 500
 
-# Environment
-ENV PORT=8080
-ENV FLASK_ENV=production
-ENV MODEL_DIR=models
-ENV PYTHONUNBUFFERED=1
-ENV OMP_NUM_THREADS=1
-ENV MKL_NUM_THREADS=1
-ENV OPENBLAS_NUM_THREADS=1
-ENV NUMEXPR_NUM_THREADS=1
-ENV MALLOC_ARENA_MAX=2
+ENV PORT=8080 \
+    MODEL_DIR=/app/models \
+    FRONTEND_DIR=/app/frontend \
+    RUST_LOG=info \
+    TOKIO_WORKER_THREADS=1 \
+    MALLOC_ARENA_MAX=2
 
-EXPOSE $PORT
+EXPOSE 8080
 
-# One worker keeps four in-memory PyTorch models within Railway Trial RAM.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 1 --timeout 180 app:app"]
+# Rust runs as one process/instance to fit Render's 512 MB free tier.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD-SHELL curl --fail --silent "http://127.0.0.1:${PORT:-8080}/api/health" >/dev/null || exit 1
+
+CMD ["./nephroscan-backend"]

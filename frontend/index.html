@@ -134,6 +134,10 @@ button {
 
 i[class*="fa-"] {
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
 }
 
 :focus-visible {
@@ -2662,7 +2666,6 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     visibility: hidden;
     box-shadow: var(--shadow-3);
     transition: transform 320ms var(--ease-drawer), visibility 0s linear 320ms;
-    will-change: transform;
   }
   .sidebar.open {
     transform: none;

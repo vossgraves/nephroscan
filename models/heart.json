@@ -1,0 +1,11 @@
+{
+  "model": "heart.onnx",
+  "input_size": 160,
+  "grayscale": false,
+  "channels": 3,
+  "normalize_mean": [0.485, 0.456, 0.406],
+  "normalize_std": [0.229, 0.224, 0.225],
+  "classes": ["false", "true"],
+  "positive_class": "true",
+  "threshold": 0.6
+}

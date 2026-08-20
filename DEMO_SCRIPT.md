@@ -24,15 +24,13 @@
 - Show the attention heatmap
 - Explain: "This shows where the model focused — it's not a diagnosis or segmentation"
 
-### 4. Expo Presence Demo (2 minutes)
-- Navigate to Expo Human Presence
-- Click Start Camera
-- Show the live optical view and thermal proxy side by side
-- Point out: "The thermal channel is a visual simulation — not an infrared measurement"
-- Show the presence log populating with detection events
-- Stop the camera
+### 4. Lab Test Analysis (2 minutes)
+- Go to Lab Test Analysis
+- Upload a lab report and add the values in the editable table
+- Point out: "Extraction is manual in this build — the table is the source of truth"
+- Generate the report and walk through the guidance sections
 
-### 5. NephroBot Assistant (1 minute)
+### 5. AI Assistant (1 minute)
 - Open the assistant
 - Ask "Explain my result"
 - Show the AI-generated explanation with disclaimer
@@ -43,7 +41,7 @@
 
 - "This is an educational prototype, not a diagnostic device"
 - "Every result includes provenance metadata for transparency"
-- "The thermal proxy is software-generated — not a temperature measurement"
+- "Grad-CAM shows model attention, not a segmentation or a measurement"
 - "All results require clinical validation by a qualified professional"
 - "No patient data is stored — everything stays in the browser session"
 
@@ -53,7 +51,6 @@
 
 ## Troubleshooting
 
-- **Camera not working:** Ensure HTTPS or localhost. Check browser permissions.
-- **Models not loading:** Verify `models/` directory contains all 4 `.pth` files
-- **CORS errors:** Set `CORS_ORIGINS` environment variable
+- **Models not loading:** verify `MODEL_DIR` holds `kidney`, `chest`, `brain`, and `heart` `.onnx` graphs with their `.json` manifests and `models.json`
+- **AI Assistant unavailable:** `AI_API_KEY` is unset, so `/api/ai/*` is disabled and the drawer shows the outage notice; local analysis still works
 - **Slow inference:** First run may be slower as models warm up

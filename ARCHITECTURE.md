@@ -2,7 +2,7 @@
 
 ## Overview
 
-Single-server Flask application serving both API and frontend. Designed for Render deployment with Gunicorn.
+Single-server Rust application (Axum + ONNX Runtime) serving both the API and the frontend from one origin. Designed for free-tier Docker hosting on Render or Railway.
 
 ```
 Browser (index.html)
@@ -14,20 +14,23 @@ Browser (index.html)
     ├── POST /api/predict-brain   → brain classification
     ├── POST /api/predict-heart   → heart classification
     ├── POST /api/explain         → Grad-CAM heatmap
-    ├── POST /api/lab/analyze     → lab report OCR + guidance
+    ├── GET  /api/lab/health      → lab extraction availability
+    ├── POST /api/lab/analyze     → lab report intake + guidance
     ├── GET  /api/ai/health       → optional AI layer status
     ├── POST /api/ai/analyze-image→ optional AI image description
     └── POST /api/ai/chat         → optional AI report Q&A
 ```
 
-## Backend (`app.py`)
+## Backend (`backend-rust/`)
 
-- **Factory pattern:** `create_app()` for Gunicorn compatibility
-- **Model loading:** All 4 ResNet-18 checkpoints loaded at startup into `app.config["MODELS"]`
-- **Inference pipeline:** Image → PIL → transform → tensor → model → softmax → result
-- **Calibrated thresholds:** Chest (0.80) and heart (0.60) use post-hoc threshold calibration
-- **Provenance:** Every response includes model name, version, timestamp, device, and inference type
-- **Upload validation:** File type, size (`MAX_UPLOAD_BYTES`, 8 MB default), image integrity checks
+- **Runtime:** single Axum process, `TOKIO_WORKER_THREADS=1`, no interpreter and no GC
+- **Model loading:** all 4 exported ONNX graphs are loaded once at startup from `MODEL_DIR` into shared session state
+- **Inference pipeline:** image → decode → per-manifest resize/grayscale → NCHW tensor → ONNX Runtime → softmax → result
+- **Manifest-driven preprocessing:** each `<modality>.json` carries `input_size`, `grayscale`, `normalize_mean/std`, `classes`, `positive_class`, and `threshold`, so preprocessing stays pinned to the trained checkpoints
+- **Calibrated thresholds:** chest (0.80) and heart (0.60) come from the manifests, not from code
+- **Provenance:** every response includes model name, version, timestamp, device, and inference type
+- **Upload validation:** content type, size (16 MB per local scan upload), and image-decode integrity checks
+- **Lab route:** `/api/lab/analyze` accepts an upload but does not run OCR in this build; it returns a `needs_review` envelope with an empty `tests` array so the frontend's manual-entry table stays authoritative
 
 ## Optional Gemini Intelligence Layer (`/api/ai/*`)
 
@@ -36,8 +39,8 @@ Gemini layer covers the rest — describing an out-of-scope image and answering
 questions about a report — and is inert unless `AI_API_KEY` is set.
 
 ```
-Browser ──same-origin POST──► Flask /api/ai/*
-                                 │  validate + bound + re-encode
+Browser ──same-origin POST──► Axum /api/ai/*
+                                 │  validate + bound + encode
                                  │  (key never leaves the server)
                                  ▼
              Gemini OpenAI-compatible /chat/completions
@@ -46,18 +49,17 @@ Browser ──same-origin POST──► Flask /api/ai/*
 - **Disabled by default:** without a key both POST routes return
   `503 {"status":"disabled","code":"ai_disabled"}` and the frontend keeps
   using local model output and offline guidance. `GET /api/ai/health` exposes the flag.
-- **Transport:** one bounded outbound HTTPS call per request via `requests`
-  (imported lazily), using Gemini's OpenAI-compatible chat-completions endpoint.
+- **Transport:** one bounded outbound HTTPS call per request through a shared
+  `reqwest` client, using Gemini's OpenAI-compatible chat-completions endpoint.
   `AI_BASE_URL` keeps the provider swappable without browser changes. No extra
-  process, thread, or resident model — one worker on a 1 GB container is enough.
-- **Image path:** JPG/PNG/WEBP only, ≤ `AI_MAX_IMAGE_BYTES`, verified with PIL,
-  then re-encoded to a ≤ `AI_MAX_IMAGE_DIM` JPEG (this also strips EXIF) and
-  sent as a base64 data URL. The encoded copy is dropped and `gc.collect()` runs
-  as soon as the call returns.
-- **Chat path:** JSON body ≤ `AI_MAX_JSON_BYTES`; roles restricted to
-  `user`/`assistant`; the newest `AI_MAX_MESSAGES` turns are forwarded under a
-  `AI_MAX_TOTAL_CHARS` budget; control characters are stripped. Caller context is
-  serialised, truncated to `AI_MAX_CONTEXT_CHARS`, and injected as untrusted data.
+  process, thread, or resident model.
+- **Image path:** JPG/PNG/WEBP only, ≤ 4 MB, decoded and bounds-checked
+  (longest edge ≤ 2048) before the bytes are base64-encoded into a data URL.
+  Nothing is written to disk and the buffer is dropped when the call returns.
+- **Chat path:** JSON body ≤ 64 KB; roles restricted to `user`/`assistant`;
+  the newest 20 turns are forwarded under a 24 000-character budget with a
+  4000-character per-message cap. Caller context is truncated to 4000
+  characters and injected as untrusted data.
 - **Prompt safety:** shared rules forbid diagnosis, certainty, and prescribing;
   they require explicit uncertainty, clinician review, and immediate emergency
   care for red-flag symptoms. Every response carries the educational disclaimer.
@@ -70,40 +72,48 @@ Browser ──same-origin POST──► Flask /api/ai/*
 
 ## Frontend (`frontend/index.html` + `frontend/src`)
 
-The existing HTML shell keeps the proven imaging, lab, history, and demo flows. A strict TypeScript module under `frontend/src` is compiled to `frontend/dist/main.js` and loaded after the legacy handlers. Railway builds it in the Docker multi-stage build; local development runs `cd frontend && npm ci && npm run build`.
+The existing HTML shell keeps the proven imaging, lab, history, and demo flows. A strict TypeScript module under `frontend/src` is compiled to `frontend/dist/main.js` and loaded after the legacy handlers. The Docker build compiles it in a Node stage; local development runs `cd frontend && npm ci && npm run build`. The module talks to same-origin `/api/*` only and never receives a credential.
 
 ### Views
 - **Dashboard** — Model status, session stats, quick actions
 - **New Analysis** — Upload images, select scan type, run inference
-- **History** — Session reports with filtering
+- **Report History** — Session reports with filtering
 - **Patients** — Patient management (demo)
-- **Compare** — Side-by-side result comparison
-- **Performance** — Model accuracy metrics
-- **Assistant** — NephroBot clinical Q&A
+- **Compare Scans** — Side-by-side result comparison
+- **Lab Test Analysis** — Lab upload, editable value table, generated report
+- **Model Performance** — Model accuracy metrics
+- **AI Assistant** — Clinical Q&A backed by `/api/ai/chat`
+- **Why NephroScan?** — Method, scope, and limitation notes
 - **Settings** — Theme, thresholds, export
-- **Expo Presence** — Live camera with thermal proxy
 
-### Expo Presence Pipeline
-1. Browser `getUserMedia()` captures webcam feed
-2. RGB canvas captures frames
-3. Thermal proxy canvas applies colormap (luminance → heat gradient)
-4. Simple motion heuristic estimates presence confidence
-5. Results logged to session table
+### Navigation and motion
+Below 920px the sidebar becomes a fixed drawer. Opening it is compositor-only:
+`transform` on the drawer (320ms, `--ease-drawer`) and `opacity` on the scrim
+(220ms), with `visibility` delayed so the closed drawer leaves the tab order.
+Nav items stagger in at 30ms steps. `prefers-reduced-motion: reduce` collapses
+durations and zeroes every delay; `forced-colors: active` restores system
+borders. The AI outage panel at the bottom of the drawer is a
+`role="status"` live region toggled from `renderAiCapabilityNotice()`.
 
 ## Models
 
-| Model | File | Classes | Calibrated |
-|---|---|---|---|
-| Kidney Stone | `kidney_stone_resnet18.pth` | stone/no_stone | No |
-| Chest Pneumonia | `chest_pneumonia_resnet18.pth` | normal/pneumonia | Yes (0.80) |
-| Brain MRI | `brain_mri_resnet18.pth` | tumor/no_tumor | No |
-| Heart Cardiomegaly | `heart_cardiomegaly_resnet18_improved.pth` | normal/cardiomegaly | Yes (0.60) |
+| Model | File | Input | Classes | Calibrated |
+|---|---|---|---|---|
+| Kidney Stone | `kidney.onnx` | 128px, grayscale | Normal / stone | No |
+| Chest Pneumonia | `chest.onnx` | 128px, RGB | normal / pneumonia | Yes (0.80) |
+| Brain MRI | `brain.onnx` | 96px, grayscale | glioma / meningioma / notumor / pituitary | No |
+| Heart Cardiomegaly | `heart.onnx` | 160px, RGB | false / true | Yes (0.60) |
+
+Each graph ships with a `<modality>.json` manifest holding its input size,
+grayscale flag, normalization constants, class order, positive class, and
+threshold. `models.json` indexes the four. Raw `.pth` checkpoints stay out of
+Git and out of the image.
 
 ## Deployment
 
-- **Platform:** Railway Trial or Render
-- **Railway config:** `railway.json` selects the Dockerfile, `/api/health` healthcheck, one-worker start command, and bounded restart policy
-- **Runtime:** Gunicorn with 1 worker, 1 thread, 180s timeout; Railway injects `$PORT`
-- **Docker:** Node build stage compiles `frontend/src` to `frontend/dist/main.js`; Python 3.11-slim runtime serves the Flask app
-- **Memory:** four local ResNet checkpoints are loaded once per worker; local smoke measurement was ~495 MiB after warm-up and ~499 MiB after one prediction. Trial's 1 GB service limit still requires one replica/worker and headroom for concurrent requests.
-- **Auto-deploy:** Railway can deploy from the linked project with `railway up`; Render can rebuild from GitHub using `render.yaml`
+- **Platform:** Render free tier or Railway Trial, Docker runtime
+- **Railway config:** `railway.json` selects the Dockerfile, sets the `/api/health` healthcheck, and bounds the restart policy; the image's `CMD` starts the Rust binary
+- **Render config:** `render.yaml` pins the free plan, one instance, `MODEL_DIR`/`FRONTEND_DIR`, and `TOKIO_WORKER_THREADS=1`
+- **Docker:** Node stage compiles `frontend/src` → `frontend/dist/main.js`; Rust stage builds `nephroscan-backend`; the Debian slim runtime carries only the binary, the frontend, and `models/`. The runtime stage fails the build if any of the four `.onnx`/`.json` pairs is missing or if `models/` exceeds 500 MB.
+- **Memory:** one process, one Tokio worker, four ONNX sessions resident. Free tiers cap at 512 MB, so keep a single instance and verify the deployed peak in platform metrics.
+- **Auto-deploy:** Railway deploys from the linked project with `railway up`; Render rebuilds from GitHub using `render.yaml`

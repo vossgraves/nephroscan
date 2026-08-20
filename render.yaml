@@ -1,20 +1,22 @@
 services:
   - type: web
     name: nephroscan-ai
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 180 app:app
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Render injects PORT; the image defaults to 8080 for local runs.
+    # Free web services sleep after 15 minutes idle and are not always-on.
+    # Keep one instance for the 512 MB / 0.1 CPU free-service limit.
     envVars:
-      - key: FLASK_ENV
-        value: production
       - key: MODEL_DIR
-        value: models
-      - key: CORS_ORIGINS
-        sync: false
-      - key: API_BASE_URL
-        value: /api
-      - key: PYTHON_VERSION
-        value: 3.11.0
+        value: /app/models
+      - key: FRONTEND_DIR
+        value: /app/frontend
+      - key: RUST_LOG
+        value: info
+      - key: TOKIO_WORKER_THREADS
+        value: "1"
     healthCheckPath: /api/health
+    numInstances: 1
     autoDeploy: true

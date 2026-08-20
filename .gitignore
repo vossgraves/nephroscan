@@ -1,29 +1,16 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
-build/
-*.egg
-
 # Node / frontend build
 node_modules/
 npm-debug.log*
 frontend/dist/
-# Virtual environment
-venv/
-.venv/
-env/
 
 # Environment
 .env
 *.docx
 
-# Models (large files, track with DVC or similar)
-models/*_v2.pth
-models/*_baseline_65pct.pth
+# Raw checkpoints stay out of Git; only exported .onnx graphs are shipped
 models/*.pth
+models/*.pt
+models/*.safetensors
 
 # IDE
 .vscode/
@@ -63,9 +50,8 @@ expo_backup/
 expo_four_model_backup/
 frontend_share/
 frontend_code_only.zip
-ai/venvcurl/
-ai/__pycache__/
-__pycache__/
 
 # Cloudflare tunnel binary
 cloudflared/
+backend-rust/target/
+target/

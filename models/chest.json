@@ -1,0 +1,11 @@
+{
+  "model": "chest.onnx",
+  "input_size": 128,
+  "grayscale": false,
+  "channels": 3,
+  "normalize_mean": [0.485, 0.456, 0.406],
+  "normalize_std": [0.229, 0.224, 0.225],
+  "classes": ["normal", "pneumonia"],
+  "positive_class": "pneumonia",
+  "threshold": 0.8
+}
