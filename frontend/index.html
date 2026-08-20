@@ -560,6 +560,78 @@ body:has(.sidebar-scrim.show) {
   margin-bottom: var(--s-5);
   line-height: 1.65;
 }
+.hero-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  gap: var(--s-8);
+  align-items: stretch;
+}
+
+.hero-copy { min-width: 0; }
+
+.hero-rail {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: 170px;
+  padding: var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.hero-rail-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--accent);
+  font: 600 .625rem/1.2 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hero-rail-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.hero-rail-title {
+  max-width: 18ch;
+  color: var(--text);
+  font-size: .9rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.hero-rail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.hero-rail-metric {
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--border);
+}
+
+.hero-rail-metric strong {
+  display: block;
+  color: var(--primary);
+  font: 700 1.25rem/1 var(--font-mono);
+}
+
+.hero-rail-metric span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: .625rem;
+  line-height: 1.35;
+}
+
 
 /* --- Stats --- */
 .stats-grid {
@@ -2511,6 +2583,16 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .hero-card p.desc {
     margin-bottom: var(--s-4);
   }
+  .hero-layout {
+    grid-template-columns: 1fr;
+    gap: var(--s-4);
+  }
+  .hero-rail {
+    min-height: auto;
+  }
+  .hero-rail-title {
+    max-width: none;
+  }
   .report-header-bar,
   .report-share-bar,
   .report-body {
@@ -2775,8 +2857,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <nav class="nav-group" aria-label="Intelligence">
       <div class="nav-label">Intelligence</div>
       <button class="nav-item" data-view="performance"><i class="fas fa-chart-line"></i> Model Performance</button>
-      <button class="nav-item" data-view="assistant"><i class="fas fa-comment-medical"></i> AI Assistant</button>
-      <button class="nav-item" data-view="health-guide"><i class="fas fa-heart-pulse"></i> AI Health Guide</button>
+      <button class="nav-item" data-view="health-guide"><i class="fas fa-comment-medical" aria-hidden="true"></i> AI Assistant</button>
       <button class="nav-item" data-view="about"><i class="fas fa-circle-info"></i> Why NephroScan?</button>
     </nav>
     <nav class="nav-group" aria-label="System">
@@ -2801,11 +2882,23 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <!-- ===================== DASHBOARD VIEW ===================== -->
     <section class="view active" id="view-dashboard">
       <div class="hero-card">
-        <div class="hero-eyebrow">AI-POWERED MEDICAL IMAGING · PROTOTYPE</div>
-        <h1>NephroScan AI</h1>
-        <div class="tagline">"From Image to Insight."</div>
-        <p class="desc">Analyze medical images with an explainable-AI workflow, structured reporting and intelligent clinical support. Review every result with qualified clinical judgment; no prediction here should be treated as a diagnosis.</p>
-        <button class="btn btn-primary" id="heroStartBtn"><i class="fas fa-wand-magic-sparkles"></i> Start New Analysis</button>
+        <div class="hero-layout">
+          <div class="hero-copy">
+            <div class="hero-eyebrow">AI-POWERED MEDICAL IMAGING · PROTOTYPE</div>
+            <h1>NephroScan AI</h1>
+            <div class="tagline">"From Image to Insight."</div>
+            <p class="desc">Analyze medical images with an explainable-AI workflow, structured reporting and intelligent clinical support. Review every result with qualified clinical judgment; no prediction here should be treated as a diagnosis.</p>
+            <button type="button" class="btn btn-primary" id="heroStartBtn"><i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> Start New Analysis</button>
+          </div>
+          <aside class="hero-rail" aria-label="NephroScan capabilities">
+            <div class="hero-rail-status"><span class="status-dot" aria-hidden="true"></span> Engine online</div>
+            <div class="hero-rail-title">Clinical review, not guesswork.</div>
+            <div class="hero-rail-grid">
+              <div class="hero-rail-metric"><strong>4</strong><span>local modalities</span></div>
+              <div class="hero-rail-metric"><strong>1</strong><span>optional vision layer</span></div>
+            </div>
+          </aside>
+        </div>
       </div>
 
       <div class="stats-grid">
@@ -5341,7 +5434,7 @@ const viewTitles = {
   lab:['fa-vials','Lab Test Analysis'],
   history:['fa-clock-rotate-left','Report History'], patients:['fa-user-injured','Patients'],
   compare:['fa-code-compare','Compare Scans'], performance:['fa-chart-line','Model Performance'],
-  assistant:['fa-comment-medical','AI Assistant'], 'health-guide':['fa-heart-pulse','AI Health Guide'],
+  assistant:['fa-comment-medical','AI Assistant'], 'health-guide':['fa-comment-medical','AI Assistant'],
   about:['fa-circle-info','Why NephroScan?'],
   settings:['fa-gear','Settings']
 };
@@ -6906,19 +6999,20 @@ document.getElementById('labAnalyzeBtn').addEventListener('click', async functio
       return;
     }
     var data = await resp.json();
-    if(data.status === 'ok' && data.tests){
+    if((data.status === 'ok' || data.status === 'needs_review') && Array.isArray(data.tests)){
       labDraftTests = data.tests.map(function(t){
         return { name: t.name||'', value: t.value||'', unit: t.unit||'', refLow: t.refLow||'', refHigh: t.refHigh||'', status: t.status||'Needs review', confidence: t.confidence||'' };
       });
-      labReport.overallSummary = data.overallSummary || '';
-      labReport.findings = data.findings || [];
-      labReport.possibleProblems = data.possibleProblems || [];
-      labReport.whatCanBeDone = data.whatCanBeDone || [];
-      labReport.dietGuidance = data.dietGuidance || [];
-      labReport.lifestyleGuidance = data.lifestyleGuidance || [];
-      labReport.urgencyGuidance = data.urgencyGuidance || '';
-      labReport.doctorDiscussionPoints = data.doctorDiscussionPoints || [];
-      labReport.uncertainty = data.uncertainty || [];
+      labReport.overallSummary = data.overallSummary || 'The report needs manual review.';
+      labReport.findings = Array.isArray(data.findings) ? data.findings : [];
+      labReport.possibleProblems = Array.isArray(data.possibleProblems) ? data.possibleProblems : [];
+      labReport.whatCanBeDone = Array.isArray(data.whatCanBeDone) ? data.whatCanBeDone : [];
+      labReport.dietGuidance = Array.isArray(data.dietGuidance) ? data.dietGuidance : [];
+      labReport.lifestyleGuidance = Array.isArray(data.lifestyleGuidance) ? data.lifestyleGuidance : [];
+      labReport.urgencyGuidance = data.urgencyGuidance || 'Needs manual review.';
+      labReport.doctorDiscussionPoints = Array.isArray(data.doctorDiscussionPoints) ? data.doctorDiscussionPoints : [];
+      labReport.uncertainty = Array.isArray(data.uncertainty) ? data.uncertainty : [];
+      labReport.disclaimer = data.disclaimer || labReport.disclaimer;
       _labRenderExtractionTable();
       document.getElementById('labExtractionCard').style.display = 'block';
       document.getElementById('labExtractionCard').scrollIntoView({behavior:'smooth'});
