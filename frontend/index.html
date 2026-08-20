@@ -1872,29 +1872,103 @@ table.data-table tr:hover td {
 }
 
 .hg-quick {
+  margin-bottom: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.hg-quick-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2);
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--s-3);
   margin-bottom: var(--s-3);
 }
 
-.hg-quick .btn {
-  min-height: 36px;
+.hg-quick-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--accent);
+  font: 600 .625rem/1.2 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hg-quick-title {
+  display: block;
+  color: var(--text);
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.hg-quick-hint {
+  color: var(--text-muted);
+  font-size: .6875rem;
+  text-align: right;
+}
+
+.hg-prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.hg-prompt {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 62px;
   padding: var(--s-2) var(--s-3);
-  font-size: .75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 160ms var(--ease-out), border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
-.hg-quick .btn-danger-ghost {
-  color: var(--danger);
-  border-color: rgba(176, 58, 74, .3);
-  background: var(--danger-soft);
+.hg-prompt:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary-light);
+  background: var(--surface-soft);
+  box-shadow: var(--shadow-1);
 }
 
-.hg-quick .btn-danger-ghost:hover:not(:disabled) {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
+.hg-prompt:active { transform: translateY(1px) scale(.985); }
+
+.hg-prompt-emoji {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  font-size: 1.05rem;
 }
+
+.hg-prompt-copy { min-width: 0; }
+
+.hg-prompt-copy strong,
+.hg-prompt-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hg-prompt-copy strong { color: var(--text); font-size: .75rem; }
+.hg-prompt-copy small { margin-top: 3px; color: var(--text-muted); font-size: .625rem; }
+.hg-prompt > i { color: var(--text-muted); font-size: .65rem; }
+
+.hg-prompt.is-danger { grid-column: 1 / -1; min-height: 44px; border-color: rgba(176, 58, 74, .25); color: var(--danger); background: var(--danger-soft); }
+.hg-prompt.is-danger .hg-prompt-emoji { background: rgba(176, 58, 74, .1); }
+.hg-prompt.is-danger .hg-prompt-copy strong { color: var(--danger); }
+
 
 .hg-composer {
   display: flex;
@@ -1963,6 +2037,28 @@ table.data-table tr:hover td {
   border-bottom-right-radius: var(--r-xs);
   color: #fff;
 }
+.bot-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: messageIn 180ms var(--ease-out) both;
+}
+
+.bot-msg::before {
+  color: var(--text-muted);
+  font: 600 .58rem/1.2 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.bot-msg.bot::before { content: 'AI Assistant'; }
+.bot-msg.user::before { content: 'You'; color: rgba(255,255,255,.72); }
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
 
 /* --- Scan preview --- */
 .scan-preview-card {
@@ -2608,6 +2704,10 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .lab-actions-bar .btn {
     min-height: var(--tap);
   }
+  .hg-prompt-grid { grid-template-columns: 1fr; }
+  .hg-quick-header { display: block; }
+  .hg-quick-hint { margin-top: 4px; text-align: left; }
+  .hg-prompt.is-danger { grid-column: auto; }
   .filter-chip,
   .row-actions button,
   .report-header-bar .actions button {
@@ -5187,15 +5287,20 @@ body.ns-compact .ns-settings{
   <div class="card">
     <div class="section-heading"><i class="fas fa-comment-medical" aria-hidden="true"></i> AI Assistant</div>
     <p class="hg-intro">Ask about health topics, lab terminology, diet, lifestyle, or preparing for a doctor visit.</p>
-    <div id="healthGuideMessages" class="hg-messages" role="log" aria-live="polite" aria-label="Conversation"></div>
-    <div id="healthGuideQuick" class="hg-quick" role="group" aria-label="Suggested questions">
-      <button type="button" class="btn btn-secondary" data-q="summarize">Summarize My Report</button>
-      <button type="button" class="btn btn-secondary" data-q="explain_finding">Explain This Finding</button>
-      <button type="button" class="btn btn-secondary" data-q="next">What Should I Do Next?</button>
-      <button type="button" class="btn btn-secondary" data-q="diet_plan">Diet and Lifestyle Plan</button>
-      <button type="button" class="btn btn-secondary" data-q="ask">Questions for My Doctor</button>
-      <button type="button" class="btn btn-secondary" data-q="compare" id="healthGuideCompareBtn" style="display:none;">Compare With Previous Report</button>
-      <button type="button" class="btn btn-secondary btn-danger-ghost" data-q="clear_chat" id="healthGuideClearBtn"><i class="fas fa-trash-can" aria-hidden="true"></i> Clear Chat</button>
+    <div id="healthGuideMessages" class="hg-messages" role="log" aria-live="polite" aria-label="Conversation">
+      <div class="bot-msg bot welcome">Hi — I can help you understand a report, unpack a lab term, or prepare questions for a clinician. Choose a starter below or ask your own question.</div>
+    </div>
+    <div id="healthGuideQuick" class="hg-quick" role="group" aria-label="Guided assistant prompts">
+      <div class="hg-quick-header"><div><span class="hg-quick-kicker">Guided starters</span><strong class="hg-quick-title">What would you like help with?</strong></div><span class="hg-quick-hint">Choose a prompt or ask below</span></div>
+      <div class="hg-prompt-grid">
+        <button type="button" class="hg-prompt" data-q="summarize"><span class="hg-prompt-emoji" aria-hidden="true">🧾</span><span class="hg-prompt-copy"><strong>Summarize my report</strong><small>A calm overview of what was found</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+        <button type="button" class="hg-prompt" data-q="explain_finding"><span class="hg-prompt-emoji" aria-hidden="true">🔍</span><span class="hg-prompt-copy"><strong>Explain a finding</strong><small>Translate a value or model output</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+        <button type="button" class="hg-prompt" data-q="next"><span class="hg-prompt-emoji" aria-hidden="true">🧭</span><span class="hg-prompt-copy"><strong>What should I do next?</strong><small>Prepare a practical clinician conversation</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+        <button type="button" class="hg-prompt" data-q="diet_plan"><span class="hg-prompt-emoji" aria-hidden="true">🥗</span><span class="hg-prompt-copy"><strong>Diet and lifestyle</strong><small>General, report-aware guidance</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+        <button type="button" class="hg-prompt" data-q="ask"><span class="hg-prompt-emoji" aria-hidden="true">🩺</span><span class="hg-prompt-copy"><strong>Questions for my doctor</strong><small>Build a short appointment checklist</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+        <button type="button" class="hg-prompt" data-q="compare" id="healthGuideCompareBtn" style="display:none;"><span class="hg-prompt-emoji" aria-hidden="true">↔️</span><span class="hg-prompt-copy"><strong>Compare reports</strong><small>See what changed between saved results</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+        <button type="button" class="hg-prompt is-danger" data-q="clear_chat" id="healthGuideClearBtn"><span class="hg-prompt-emoji" aria-hidden="true">🧹</span><span class="hg-prompt-copy"><strong>Clear conversation</strong><small>Start a fresh assistant thread</small></span><i class="fas fa-rotate-left" aria-hidden="true"></i></button>
+      </div>
     </div>
     <div class="hg-composer">
       <label class="visually-hidden" for="healthGuideInput">Ask a health question</label>
@@ -6469,8 +6574,6 @@ function _hgOpenEndedGeneralReply(t){
   return 'I can help with general health guidance, medical terminology, diet and lifestyle habits, or preparing for a doctor visit.\n\nTry asking about kidneys, heart health, blood pressure, diabetes, cholesterol, or a specific report value.\n\nFor personal health concerns, diagnosis, or treatment decisions, consult a qualified healthcare professional.\n\n' + _HG_DISCLAIMER;
 }
 
-function _hgImagingDietLifestyle(scanType){
-}
 
 function _healthGuideClearChat(){
   _hgChatHistory = [];
