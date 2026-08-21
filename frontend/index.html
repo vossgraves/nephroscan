@@ -3,13 +3,115 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<meta name="color-scheme" content="light"/>
-<meta name="theme-color" content="#14609e"/>
+<meta name="color-scheme" content="light dark"/>
+<meta name="theme-color" id="themeColorMeta" content="#eef2f5"/>
+<script>
+(() => {
+  const root = document.documentElement;
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const ORDER = ['system', 'light', 'dark'];
+  const BAR = { light: '#eef2f5', dark: '#0e171e' };
+
+  const readStored = () => {
+    try {
+      const saved = localStorage.getItem('nephroTheme');
+      return ORDER.indexOf(saved) > -1 ? saved : 'system';
+    } catch (err) {
+      return 'system';
+    }
+  };
+  const writeStored = (value) => {
+    try { localStorage.setItem('nephroTheme', value); } catch (err) { /* storage blocked: session-only */ }
+  };
+
+  let preference = readStored();
+
+  const apply = () => {
+    const resolved = preference === 'system' ? (media.matches ? 'dark' : 'light') : preference;
+    root.dataset.themePreference = preference;
+    root.dataset.theme = resolved;
+    const bar = document.getElementById('themeColorMeta');
+    if (bar) bar.setAttribute('content', BAR[resolved]);
+    const group = document.getElementById('themeToggle');
+    if (group) {
+      group.querySelectorAll('[data-theme-choice]').forEach((btn) => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.themeChoice === preference));
+      });
+    }
+  };
+
+  /* One class on <html> for the length of the fade. Transitions are declared
+     in the after-change style, so adding the class in the same frame as the
+     token swap is what starts them; nothing outside a theme change pays. */
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let fadeTimer = 0;
+  const crossfade = () => {
+    if (reduceMotion.matches) return;
+    root.classList.add('theme-switching');
+    clearTimeout(fadeTimer);
+    fadeTimer = window.setTimeout(() => root.classList.remove('theme-switching'), 260);
+  };
+
+  const set = (value) => {
+    const next = ORDER.indexOf(value) > -1 ? value : 'system';
+    if (next !== preference) crossfade();
+    preference = next;
+    writeStored(preference);
+    apply();
+  };
+
+  apply();
+
+  const onSystemChange = () => { if (preference === 'system') { crossfade(); apply(); } };
+  if (media.addEventListener) media.addEventListener('change', onSystemChange);
+  else if (media.addListener) media.addListener(onSystemChange);
+
+  window.__nephroTheme = {
+    get: () => preference,
+    set: set,
+    cycle: () => set(ORDER[(ORDER.indexOf(preference) + 1) % ORDER.length])
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    apply();
+    const group = document.getElementById('themeToggle');
+    if (!group) return;
+    group.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-theme-choice]');
+      if (btn) set(btn.dataset.themeChoice);
+    });
+    group.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const step = event.key === 'ArrowRight' ? 1 : ORDER.length - 1;
+      const next = ORDER[(ORDER.indexOf(preference) + step) % ORDER.length];
+      set(next);
+      const target = group.querySelector('[data-theme-choice="' + next + '"]');
+      if (target) target.focus();
+    });
+  });
+})();
+</script>
 <title>NephroScan — Medical Imaging Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+<style>
+@font-face {
+  font-family: 'Google Sans Rounded';
+  src: url('fonts/GoogleSansRounded-Bold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  /* Pinned to the file's real hhea metrics (upem 2000, asc 1932, desc -572,
+     gap 0) so engines that default to usWin* (122.6% / 50%) cannot reflow
+     headings when the display face swaps in. */
+  ascent-override: 96.6%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+</style>
 <style>
 /* =================================================================
    NEPHROSCAN — CLINICAL LIGHT UI
@@ -73,9 +175,24 @@
   --shadow-2: 0 2px 8px rgba(20, 44, 60, .07);
   --shadow-3: 0 12px 32px rgba(20, 44, 60, .14);
 
+  /* translucent status hairlines and overlays — retinted per theme */
+  --warning-line: rgba(154, 106, 6, .22);
+  --danger-line: rgba(176, 58, 74, .25);
+  --danger-tint: rgba(176, 58, 74, .1);
+  --success-line: rgba(21, 121, 90, .28);
+  --hairline: rgba(20, 44, 60, .12);
+  --scrim: rgba(15, 32, 45, .48);
+
+  /* ink for filled brand surfaces */
+  --on-primary: #fff;
+  --on-success: #fff;
+  --on-danger: #fff;
+  --knob: #fff;
+
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
+  --font-display: 'Google Sans Rounded', var(--font-sans);
   --sidebar-w: 258px;
   --tap: 44px;
 
@@ -83,6 +200,56 @@
   --ease-drawer: cubic-bezier(.32, .72, 0, 1);
   --ease-emph: cubic-bezier(.2, 0, 0, 1);
   --dur: .2s;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --primary: #70b7ef;
+  --primary-strong: #9bd2f7;
+  --primary-light: #8bc7f2;
+  --primary-soft: #18354d;
+  --secondary: #b2c9d8;
+  --accent: #66d4cd;
+  --accent-soft: #173c40;
+  --success: #65d6a6;
+  --success-soft: #153b2e;
+  --warning: #f0cb70;
+  --warning-soft: #403518;
+  --danger: #f28f9f;
+  --danger-soft: #43232d;
+  --page-bg: #0e171e;
+  --surface: #16232d;
+  --surface-soft: #1b2d38;
+  --surface-sunken: #0a1117;
+  --text: #edf6f8;
+  --text-secondary: #b7cbd4;
+  --text-muted: #91a8b3;
+  --border: #2d4654;
+  --border-light: #243a46;
+  --border-strong: #416071;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .22);
+  --shadow-2: 0 2px 10px rgba(0, 0, 0, .28);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, .38);
+  --warning-line: rgba(240, 203, 112, .34);
+  --danger-line: rgba(242, 143, 159, .34);
+  --danger-tint: rgba(242, 143, 159, .14);
+  --success-line: rgba(101, 214, 166, .32);
+  --hairline: rgba(146, 186, 206, .2);
+  --scrim: rgba(3, 10, 15, .64);
+  /* dark-theme brand colours are light, so filled surfaces need dark ink */
+  --on-primary: #08161f;
+  --on-success: #06231a;
+  --on-danger: #2b0d13;
+  --knob: #08161f;
+}
+
+:root[data-theme="dark"] body {
+  background: var(--page-bg);
+}
+
+:root[data-theme="dark"] .topbar-link,
+:root[data-theme="dark"] .btn-secondary,
+:root[data-theme="dark"] .filter-chip {
+  color: var(--text-secondary);
 }
 
 /* ---------------- 2. BASE ---------------- */
@@ -138,6 +305,25 @@ i[class*="fa-"] {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+}
+.logo-text,
+.view-title,
+.hero-card h1,
+.section-heading,
+.pred-headline,
+.hg-quick-title,
+.ns-settings-header h2 {
+  font-family: var(--font-display);
+  /* only the 700 face ships — never let the engine fake a weight or slant */
+  font-weight: 700;
+  font-synthesis: none;
+}
+
+/* Meta chips inside headings stay on the body face: the rounded display
+   face loses legibility at chip sizes. */
+.section-heading .tag-sample {
+  font-family: var(--font-sans);
+  font-weight: 700;
 }
 
 :focus-visible {
@@ -227,7 +413,6 @@ i[class*="fa-"] {
   overflow-y: auto;
   overscroll-behavior: contain;
   transition: transform 320ms var(--ease-drawer);
-  will-change: transform;
   z-index: 50;
 }
 .ai-outage-panel {
@@ -236,7 +421,7 @@ i[class*="fa-"] {
   gap: var(--s-2);
   margin-top: auto;
   padding: var(--s-3);
-  border: 1px solid rgba(154, 106, 6, .22);
+  border: 1px solid var(--warning-line);
   border-left: 3px solid var(--warning);
   border-radius: var(--r-sm);
   background: var(--warning-soft);
@@ -281,13 +466,13 @@ i[class*="fa-"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--on-primary);
   font-size: 1rem;
   flex-shrink: 0;
 }
 
 .logo-icon i {
-  color: #fff;
+  color: var(--on-primary);
 }
 
 .logo-text {
@@ -327,22 +512,42 @@ i[class*="fa-"] {
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s-3);
   min-height: var(--tap);
-  padding: var(--s-2) var(--s-3);
+  /* 3px of the left inset belongs to the ::before indicator */
+  padding: var(--s-2) var(--s-3) var(--s-2) calc(var(--s-3) + 3px);
   border-radius: var(--r-sm);
   color: var(--text-secondary);
   font-size: .875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--dur) ease, color var(--dur) ease;
+  transition: transform 140ms var(--ease-emph), background var(--dur) ease, color var(--dur) ease;
   border: 0;
-  border-left: 3px solid transparent;
   background: none;
   width: 100%;
   text-align: left;
+}
+
+/* The selection bar is a scaled pseudo-element rather than a border colour
+   change so selecting a view is a visible, compositor-only movement. */
+.nav-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+  transform: scaleY(0);
+  transition: transform 260ms var(--ease-emph);
+}
+
+.nav-item.active::before {
+  transform: scaleY(1);
 }
 
 .nav-item i {
@@ -350,7 +555,7 @@ i[class*="fa-"] {
   text-align: center;
   font-size: .875rem;
   color: var(--text-muted);
-  transition: color var(--dur) ease;
+  transition: transform 200ms var(--ease-emph), color var(--dur) ease;
   flex-shrink: 0;
 }
 
@@ -361,11 +566,15 @@ i[class*="fa-"] {
 
 .nav-item:hover i {
   color: var(--accent);
+  transform: translateX(2px);
+}
+
+.nav-item:active {
+  transform: translateX(2px) scale(.99);
 }
 
 .nav-item.active {
   background: var(--primary-soft);
-  border-left-color: var(--primary);
   color: var(--primary-strong);
   font-weight: 600;
 }
@@ -378,7 +587,7 @@ i[class*="fa-"] {
   display: block;
   position: fixed;
   inset: 0;
-  background: rgba(15, 32, 45, .48);
+  background: var(--scrim);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -423,7 +632,7 @@ body:has(.sidebar-scrim.show) {
 }
 
 .topbar .view-title {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 1rem;
   display: flex;
   align-items: center;
@@ -466,6 +675,77 @@ body:has(.sidebar-scrim.show) {
   color: var(--primary-strong);
   background: var(--primary-soft);
   transform: translateY(-1px);
+}
+
+/* --- Theme toggle (System / Light / Dark) --- */
+.theme-toggle {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-soft);
+}
+
+/* One moving part, transform only — the three buttons never reflow. */
+.theme-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: transform 260ms var(--ease-emph);
+  will-change: transform;
+}
+
+:root[data-theme-preference="light"] .theme-toggle-thumb { transform: translateX(100%); }
+:root[data-theme-preference="dark"] .theme-toggle-thumb { transform: translateX(200%); }
+
+.theme-opt {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 28px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text-muted);
+  font-size: .6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.theme-opt i { font-size: .75rem; }
+
+.theme-opt:hover { color: var(--text-secondary); }
+
+.theme-opt[aria-pressed="true"] {
+  color: var(--primary-strong);
+}
+
+/* Below this width the topbar has no room for three labels; the accessible
+   name survives because the text stays in the accessibility tree. */
+@media (max-width: 1080px) {
+  .theme-opt-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .theme-opt { padding: 0 var(--s-2); }
 }
 
 
@@ -558,7 +838,7 @@ body:has(.sidebar-scrim.show) {
 }
 
 .section-heading {
-  font-weight: 600;
+  font-weight: 700;
   font-size: .9375rem;
   display: flex;
   align-items: center;
@@ -582,7 +862,7 @@ body:has(.sidebar-scrim.show) {
   font-weight: 600;
   color: var(--warning);
   background: var(--warning-soft);
-  border: 1px solid rgba(154, 106, 6, .22);
+  border: 1px solid var(--warning-line);
   padding: 2px var(--s-2);
   border-radius: var(--r-pill);
   letter-spacing: .03em;
@@ -1176,7 +1456,7 @@ body:has(.sidebar-scrim.show) {
 .btn-primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -1186,7 +1466,7 @@ body:has(.sidebar-scrim.show) {
 
 .btn-primary i,
 .btn-primary span {
-  color: #fff;
+  color: var(--on-primary);
 }
 
 .btn-secondary {
@@ -1208,7 +1488,7 @@ body:has(.sidebar-scrim.show) {
 .btn-success {
   background: var(--success);
   border-color: var(--success);
-  color: #fff;
+  color: var(--on-success);
 }
 
 /* --- Pipeline --- */
@@ -1251,7 +1531,7 @@ body:has(.sidebar-scrim.show) {
 .pipeline .step.done {
   background: var(--success-soft);
   color: var(--success);
-  border-color: rgba(21, 121, 90, .28);
+  border-color: var(--success-line);
 }
 
 .pipeline .step.done i {
@@ -1524,7 +1804,7 @@ body.mode-patient .mode-patient-only { display: block; }
 
 .emergency-box {
   background: var(--danger-soft);
-  border: 1px solid rgba(176, 58, 74, .25);
+  border: 1px solid var(--danger-line);
   border-left: 3px solid var(--danger);
   border-radius: var(--r-sm);
   padding: var(--s-3) var(--s-4);
@@ -1554,9 +1834,119 @@ body.mode-patient .mode-patient-only { display: block; }
   color: var(--success);
 }
 
+/* --- Hybrid review callout ---------------------------------------------
+   Only shown when the local model landed under its review threshold. The
+   local prediction stays primary in every state, so the callout is a quiet
+   band, not an alert. data-state is set by the typed module. */
+.hybrid-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--s-3) 0;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--surface-soft);
+}
+
+.hybrid-callout-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.hybrid-callout-head i {
+  color: var(--accent);
+  font-size: .8125rem;
+}
+
+.hybrid-callout-head strong {
+  color: var(--text);
+  font: 700 .6875rem/1.2 var(--font-mono);
+  letter-spacing: .06em;
+}
+
+.hybrid-callout-badge {
+  margin-left: auto;
+  padding: 2px var(--s-2);
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 600 .5625rem/1.4 var(--font-mono);
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+
+.hybrid-callout-body {
+  color: var(--text-secondary);
+  font-size: .75rem;
+  line-height: 1.6;
+}
+
+.hybrid-callout-body b {
+  color: var(--text);
+}
+
+.hybrid-callout[data-state="pending"] {
+  border-left-color: var(--primary);
+}
+
+.hybrid-callout[data-state="pending"] .hybrid-callout-head i,
+.hybrid-callout[data-state="pending"] .hybrid-callout-badge {
+  color: var(--primary-strong);
+}
+
+.hybrid-callout[data-state="pending"] .hybrid-callout-badge {
+  border-color: var(--primary-soft);
+  background: var(--primary-soft);
+}
+
+.hybrid-callout[data-state="fallback"] {
+  border-color: var(--warning-line);
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.hybrid-callout[data-state="fallback"] .hybrid-callout-head i,
+.hybrid-callout[data-state="fallback"] .hybrid-callout-badge {
+  color: var(--warning);
+}
+
+.hybrid-callout[data-state="fallback"] .hybrid-callout-badge {
+  border-color: var(--warning-line);
+  background: transparent;
+}
+
+/* The supplemental API section is visibly secondary to the local report. */
+.ai-image-enhancement {
+  border-left: 3px solid var(--accent);
+  padding-left: var(--s-4);
+}
+
+.disclaimer-box[data-ai-image-status],
+.disclaimer-box[data-ai-chat-status] {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.disclaimer-box[data-ai-status="error"] {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+
+.disclaimer-box[data-ai-status="disabled"] {
+  background: var(--warning-soft);
+  border-color: var(--warning-line);
+}
+
 .disclaimer-box {
   background: var(--warning-soft);
-  border: 1px solid rgba(154, 106, 6, .22);
+  border: 1px solid var(--warning-line);
   border-radius: var(--r-sm);
   padding: var(--s-3) var(--s-4);
   font-size: .75rem;
@@ -1684,7 +2074,7 @@ body.mode-patient .mode-patient-only { display: block; }
 
 .filter-chip.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   border-color: var(--primary);
   font-weight: 600;
 }
@@ -1738,7 +2128,7 @@ table.data-table tr:hover td {
   font-weight: 600;
   padding: 2px var(--s-2);
   border-radius: var(--r-pill);
-  border: 1px solid rgba(20, 44, 60, .12);
+  border: 1px solid var(--hairline);
   white-space: nowrap;
 }
 
@@ -1936,7 +2326,10 @@ table.data-table tr:hover td {
   justify-content: space-between;
   gap: var(--s-3);
   margin-bottom: var(--s-3);
+  transition: margin-bottom 240ms var(--ease-emph);
 }
+
+.hg-quick-copy { min-width: 0; }
 
 .hg-quick-kicker {
   display: block;
@@ -1954,17 +2347,105 @@ table.data-table tr:hover td {
   font-weight: 700;
 }
 
+.hg-quick-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
 .hg-quick-hint {
   color: var(--text-muted);
   font-size: .6875rem;
   text-align: right;
 }
 
+/* Collapse and clear live outside .hg-prompt-grid on purpose: the grid gets
+   pointer-events:none and tabIndex -1 when collapsed, so a control inside it
+   would be the one thing that can never bring the prompts back. */
+.hg-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 36px;
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: .6875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.hg-quick-btn:hover {
+  color: var(--text);
+  border-color: var(--primary-light);
+  background: var(--surface-soft);
+}
+
+.hg-quick-btn i {
+  font-size: .625rem;
+  transition: transform 240ms var(--ease-emph);
+}
+
+.hg-quick-btn.is-danger {
+  color: var(--danger);
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+}
+
+.hg-quick-btn.is-danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
 .hg-prompt-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-2);
+  overflow: hidden;
+  max-height: 60rem;
+  transition: max-height 240ms var(--ease-emph), opacity 140ms ease, transform 240ms var(--ease-emph);
 }
+
+.hg-prompt-grid.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+}
+
+/* Where height:auto is interpolable the collapse lands on the real content
+   height instead of easing toward an arbitrary max-height ceiling. */
+@supports (interpolate-size: allow-keywords) {
+  .hg-quick { interpolate-size: allow-keywords; }
+  .hg-prompt-grid {
+    max-height: none;
+    height: auto;
+    transition: height 240ms var(--ease-emph), opacity 140ms ease, transform 240ms var(--ease-emph);
+  }
+  .hg-prompt-grid.is-collapsed {
+    max-height: none;
+    height: 0;
+  }
+}
+
+/* Both the legacy handler and the typed module toggle .is-collapsed on the
+   grid, so every dependent visual reads from there — no second source. */
+.hg-quick:has(.hg-prompt-grid.is-collapsed) .hg-quick-header {
+  margin-bottom: 0;
+}
+
+.hg-quick-btn-label[data-when="collapsed"] { display: none; }
+
+.hg-quick:has(.hg-prompt-grid.is-collapsed) .hg-quick-btn-label[data-when="expanded"] { display: none; }
+.hg-quick:has(.hg-prompt-grid.is-collapsed) .hg-quick-btn-label[data-when="collapsed"] { display: inline; }
+.hg-quick:has(.hg-prompt-grid.is-collapsed) #healthGuidePromptsToggle i { transform: rotate(180deg); }
 
 .hg-prompt {
   display: grid;
@@ -2016,8 +2497,8 @@ table.data-table tr:hover td {
 .hg-prompt-copy small { margin-top: 3px; color: var(--text-muted); font-size: .625rem; }
 .hg-prompt > i { color: var(--text-muted); font-size: .65rem; }
 
-.hg-prompt.is-danger { grid-column: 1 / -1; min-height: 44px; border-color: rgba(176, 58, 74, .25); color: var(--danger); background: var(--danger-soft); }
-.hg-prompt.is-danger .hg-prompt-emoji { background: rgba(176, 58, 74, .1); }
+.hg-prompt.is-danger { grid-column: 1 / -1; min-height: 44px; border-color: var(--danger-line); color: var(--danger); background: var(--danger-soft); }
+.hg-prompt.is-danger .hg-prompt-emoji { background: var(--danger-tint); }
 .hg-prompt.is-danger .hg-prompt-copy strong { color: var(--danger); }
 
 
@@ -2086,13 +2567,77 @@ table.data-table tr:hover td {
   background: var(--primary);
   align-self: flex-end;
   border-bottom-right-radius: var(--r-xs);
-  color: #fff;
+  color: var(--on-primary);
 }
 .bot-msg {
   display: flex;
   flex-direction: column;
   gap: 4px;
   animation: messageIn 180ms var(--ease-out) both;
+}
+.hg-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--text-muted);
+}
+
+.hg-loading-label {
+  font-size: .75rem;
+  font-style: normal;
+}
+
+.hg-loading .loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: loadingPulse 900ms ease-in-out infinite;
+}
+
+.hg-loading .loading-dot:nth-child(2) { animation-delay: 120ms; }
+.hg-loading .loading-dot:nth-child(3) { animation-delay: 240ms; }
+
+/* Answer / Consider / Next step — the API reply shape. Labels carry the
+   structure so the body text can stay plain and scannable. */
+.chat-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-block + .chat-block {
+  margin-top: var(--s-2);
+}
+
+.chat-block > strong {
+  color: var(--text-muted);
+  font: 600 .58rem/1.2 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.chat-block[data-kind="answer"] > strong { color: var(--primary-strong); }
+.chat-block[data-kind="consider"] > strong { color: var(--warning); }
+.chat-block[data-kind="next"] > strong { color: var(--accent); }
+
+/* Quiet footer: present, never competing with the answer. */
+.chat-attribution {
+  display: block;
+  margin-top: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font: 500 .6rem/1.4 var(--font-mono);
+  letter-spacing: .02em;
+}
+
+.hg-word {
+  display: inline-block;
+  animation: wordReveal 180ms var(--ease-out) both;
+  /* --word-index is capped at 35 by both render paths, so the reveal always
+     finishes inside ~600ms no matter how long the reply is. */
+  animation-delay: calc(var(--word-index) * 12ms);
 }
 
 .bot-msg::before {
@@ -2102,11 +2647,23 @@ table.data-table tr:hover td {
   text-transform: uppercase;
 }
 
-.bot-msg.bot::before { content: 'AI Assistant'; }
-.bot-msg.user::before { content: 'You'; color: rgba(255,255,255,.72); }
+/* Never claim an API wrote a local answer. */
+.bot-msg.bot::before { content: 'Assistant'; }
+.bot-msg.bot[data-source="local"]::before { content: 'Local guidance'; }
+.bot-msg.bot[data-source="api"]::before { content: 'AI assistant'; }
+.bot-msg.user::before { content: 'You'; color: color-mix(in srgb, var(--on-primary) 70%, transparent); }
 
 @keyframes messageIn {
   from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes loadingPulse {
+  0%, 100% { opacity: .35; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes wordReveal {
+  from { opacity: 0; transform: translateY(2px); }
   to { opacity: 1; transform: none; }
 }
 
@@ -2173,7 +2730,7 @@ table.data-table tr:hover td {
   border-radius: 50%;
   background: var(--primary);
   border: 1px solid var(--primary-strong);
-  color: #fff;
+  color: var(--on-primary);
   font-size: 1.125rem;
   cursor: pointer;
   box-shadow: var(--shadow-3);
@@ -2292,7 +2849,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--knob);
   transition: left var(--dur) var(--ease-out);
   box-shadow: var(--shadow-1);
 }
@@ -2338,15 +2895,6 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
 
 .dot-online { background: var(--success); }
 .dot-demo { background: var(--warning); }
-
-.dot {
-  animation: gentlePulse 2.4s ease-in-out infinite;
-}
-
-@keyframes gentlePulse {
-  0%, 100% { opacity: .6; }
-  50% { opacity: 1; }
-}
 
 .text-primary,
 .icon-primary {
@@ -2543,7 +3091,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
 }
 
 .lab-disclaimer {
-  border: 1px solid rgba(154, 106, 6, .22);
+  border: 1px solid var(--warning-line);
   border-left: 3px solid var(--warning);
   background: var(--warning-soft);
   padding: var(--s-3) var(--s-4);
@@ -2666,6 +3214,9 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     visibility: hidden;
     box-shadow: var(--shadow-3);
     transition: transform 320ms var(--ease-drawer), visibility 0s linear 320ms;
+    /* Only the drawer transforms; the desktop sidebar must not hold a
+       permanent compositor layer for a transition it never runs. */
+    will-change: transform;
   }
   .sidebar.open {
     transform: none;
@@ -2766,6 +3317,8 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .hg-prompt-grid { grid-template-columns: 1fr; }
   .hg-quick-header { display: block; }
   .hg-quick-hint { margin-top: 4px; text-align: left; }
+  .hg-quick-tools { justify-content: flex-start; margin-top: var(--s-2); }
+  .hg-quick-btn { min-height: var(--tap); }
   .hg-prompt.is-danger { grid-column: auto; }
   .filter-chip,
   .row-actions button,
@@ -2890,6 +3443,20 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .sidebar.open .nav-item {
     animation-delay: 0ms !important;
   }
+  /* The global override zeroes duration but not delay: with fill-mode both,
+     staggered words and dots would sit at their `from` state until their
+     delay elapsed. Reset the delays and give the dots a resting look. */
+  .hg-word {
+    animation-delay: 0ms !important;
+  }
+  .hg-loading .loading-dot {
+    animation: none !important;
+    opacity: .6;
+  }
+  .theme-toggle-thumb,
+  .hg-quick-btn i {
+    transition: none !important;
+  }
 }
 
 @media (forced-colors: active) {
@@ -2906,6 +3473,11 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .sidebar,
   .ai-banner,
   .ai-outage-panel,
+  .hybrid-callout,
+  .hg-quick-btn,
+  .theme-toggle,
+  .bot-msg,
+  .disclaimer-box,
   .ai-banner .chip,
   .pipeline .step,
   .toast,
@@ -2918,6 +3490,23 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .nav-item.active {
     outline: 2px solid Highlight;
     outline-offset: -2px;
+  }
+  .theme-opt[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  /* The sliding thumb carries no colour in forced-colors mode. */
+  .theme-toggle-thumb {
+    display: none;
+  }
+  .hybrid-callout-badge,
+  .chat-attribution,
+  .hg-loading-label {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+  .hg-loading .loading-dot {
+    background: CanvasText;
   }
   .donut,
   .confidence-fill,
@@ -2958,6 +3547,158 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   .report-body {
     max-height: none;
     overflow: visible;
+  }
+}
+
+/* ---------------- 7. MOTION FEEDBACK ----------------
+   Appended after section 6 on purpose. Every rule here is a press state, a
+   focus state, a fixed icon box, or a transition list that has to win over
+   the component rule it extends — a later rule of equal specificity replaces
+   the whole `transition` shorthand, so the base properties are repeated.
+   Transform, opacity and colour only; nothing here loops. */
+
+/* --- Theme crossfade ---
+   Without this the token swap is a hard cut across the whole page. Scoped to
+   the large surfaces the eye actually tracks. */
+:root.theme-switching body,
+:root.theme-switching .topbar,
+:root.theme-switching .card,
+:root.theme-switching .hero-card,
+:root.theme-switching .stat-card,
+:root.theme-switching .ai-banner,
+:root.theme-switching .hg-quick,
+:root.theme-switching .hg-messages,
+:root.theme-switching .report-container,
+:root.theme-switching .ns-settings {
+  transition: background-color 240ms var(--ease-out),
+              border-color 240ms var(--ease-out),
+              color 240ms var(--ease-out);
+}
+
+/* The drawer keeps its slide: the colour fade is added to it, not swapped in. */
+:root.theme-switching .sidebar {
+  transition: transform 320ms var(--ease-drawer),
+              background-color 240ms var(--ease-out),
+              border-color 240ms var(--ease-out);
+}
+
+/* --- Scrim exit matches the drawer ---
+   At 220ms the scrim went hidden while the panel still had 100ms of travel
+   left, which read as two separate movements. */
+.sidebar-scrim {
+  transition: opacity 320ms var(--ease-drawer), visibility 0s linear 320ms;
+}
+
+.sidebar-scrim.show {
+  transition: opacity 220ms var(--ease-drawer), visibility 0s linear 0s;
+}
+
+/* --- Press feedback ---
+   Every control the pointer can hit answers inside 120ms. */
+.theme-opt {
+  transition: color 160ms ease, transform 120ms var(--ease-emph);
+}
+
+.theme-opt:active { transform: scale(.93); }
+
+/* The ring belongs inside the pill; the shared 2px offset would sit on top of
+   the toggle's own border. */
+.theme-opt:focus-visible { outline-offset: -2px; }
+
+.hamburger,
+.icon-btn {
+  transition: background var(--dur) ease, color var(--dur) ease,
+              transform 120ms var(--ease-emph);
+}
+
+.hamburger:active,
+.icon-btn:active { transform: scale(.92); }
+
+.topbar-link:active { transform: translateY(1px) scale(.985); }
+
+.hg-quick-btn {
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease,
+              transform 120ms var(--ease-emph);
+}
+
+.hg-quick-btn:active { transform: scale(.96); }
+
+.filter-chip,
+.row-actions button,
+.report-header-bar .actions button {
+  transition: background var(--dur) ease, color var(--dur) ease,
+              transform 120ms var(--ease-emph);
+}
+
+.filter-chip:active,
+.row-actions button:active,
+.report-header-bar .actions button:active { transform: scale(.94); }
+
+.upload-box,
+#labUploadBox {
+  transition: background var(--dur) ease, border-color var(--dur) ease,
+              transform 140ms var(--ease-out);
+}
+
+.upload-box:active,
+#labUploadBox:active { transform: scale(.995); }
+
+/* --- Fixed icon boxes ---
+   Font Awesome glyph widths differ by up to 6px. A fixed box plus the
+   inline-flex centring from the base `i[class*="fa-"]` rule starts every
+   label at the same x, whichever glyph is in front of it. */
+.view-title > i,
+.section-heading > i { width: 18px; }
+
+.btn > i { width: 15px; }
+
+.pipeline .step > i,
+.ai-banner .tag > i,
+.ai-banner .chip > i,
+.topbar-link > i,
+.theme-opt > i { width: 14px; }
+
+/* Also stops the chevron nudging the label as it rotates through 180deg. */
+.hg-quick-btn > i { width: 12px; }
+
+/* --- View entry ---
+   The dashboard stages its own sections; every other view had only the 200ms
+   container fade, so switching read as a swap. Same curve, same keyframe. */
+.view.active:not(.view-dashboard) > div {
+  animation: dashboardEnter 360ms var(--ease-out) both;
+}
+
+.view.active:not(.view-dashboard) > div:nth-child(2) { animation-delay: 50ms; }
+.view.active:not(.view-dashboard) > div:nth-child(3) { animation-delay: 100ms; }
+.view.active:not(.view-dashboard) > div:nth-child(n+4) { animation-delay: 140ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Section 6 zeroes durations but not delays, and `both` would otherwise
+     hold these blocks at opacity 0 until their delay elapsed. Press states
+     stay: with the duration zeroed they are instant state, not motion. */
+  .view.active:not(.view-dashboard) > div {
+    animation-delay: 0ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .hg-prompt,
+  .quick-actions .qa,
+  .upload-box,
+  #labUploadBox,
+  .hamburger,
+  .icon-btn,
+  .topbar-link,
+  .health-guide-fab {
+    border: 1px solid CanvasText;
+  }
+  /* A scale carries no colour, so the pressed state needs an edge the
+     high-contrast palette can render. */
+  .theme-opt:active,
+  .hg-quick-btn:active,
+  .nav-item:active {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
   }
 }
 
@@ -3020,9 +3761,15 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   <main class="main-area">
 
     <div class="topbar">
-      <button type="button" class="hamburger" id="hamburgerBtn" aria-label="Open navigation menu" aria-controls="sidebar"><i class="fas fa-bars" aria-hidden="true"></i></button>
+      <button type="button" class="hamburger" id="hamburgerBtn" aria-label="Navigation menu" aria-controls="sidebar" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i></button>
       <div class="view-title" id="viewTitle"><i class="fas fa-gauge-high"></i> Dashboard</div>
       <div class="topbar-right">
+        <div class="theme-toggle" id="themeToggle" role="group" aria-label="Color theme">
+          <span class="theme-toggle-thumb" aria-hidden="true"></span>
+          <button type="button" class="theme-opt" data-theme-choice="system" aria-pressed="true"><i class="fas fa-circle-half-stroke" aria-hidden="true"></i><span class="theme-opt-label">System</span></button>
+          <button type="button" class="theme-opt" data-theme-choice="light" aria-pressed="false"><i class="fas fa-sun" aria-hidden="true"></i><span class="theme-opt-label">Light</span></button>
+          <button type="button" class="theme-opt" data-theme-choice="dark" aria-pressed="false"><i class="fas fa-moon" aria-hidden="true"></i><span class="theme-opt-label">Dark</span></button>
+        </div>
         <a class="topbar-link" href="/landing.html"><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i> Platform overview</a>
       </div>
     </div>
@@ -3057,7 +3804,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
           </div>
         </div>
         <div class="card">
-          <div class="section-heading"><i class="fas fa-chart-column"></i> Analysis Timeline <span style="font-size:.62rem;color:#9aa7b2;font-weight:400;">(this session)</span></div>
+          <div class="section-heading"><i class="fas fa-chart-column"></i> Analysis Timeline <span style="font-size:.62rem;color:var(--text-muted);font-weight:400;">(this session)</span></div>
           <div class="bar-chart" id="timelineChart"></div>
         </div>
       </div>
@@ -3117,9 +3864,9 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <div class="field-group" style="margin-bottom:.8rem;">
       <label><i class="fas fa-mobile-screen-button"></i> Mobile number for report SMS <span style="opacity:.45;">(optional)</span></label>
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
-        <input type="tel" id="smsPhone" placeholder="+91 9876543210" style="flex:1;min-width:180px;padding:.5rem .7rem;border:1px solid #d8e4ea;border-radius:10px;font-size:.82rem;background:#fbfdfe;color:#263e50;" />
-        <input type="email" id="shareEmail" placeholder="recipient@example.com (optional)" style="flex:1;min-width:180px;padding:.5rem .7rem;border:1px solid #d8e4ea;border-radius:10px;font-size:.82rem;background:#fbfdfe;color:#263e50;" />
-        <label style="display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:#5a6b7a;cursor:pointer;"><input type="checkbox" id="smsConsent" /> I agree to prepare this X-ray report for SMS delivery</label>
+        <input type="tel" id="smsPhone" placeholder="+91 9876543210" style="flex:1;min-width:180px;padding:.5rem .7rem;border:1px solid var(--border);border-radius:10px;font-size:.82rem;background:var(--surface);color:var(--text);" />
+        <input type="email" id="shareEmail" placeholder="recipient@example.com (optional)" style="flex:1;min-width:180px;padding:.5rem .7rem;border:1px solid var(--border);border-radius:10px;font-size:.82rem;background:var(--surface);color:var(--text);" />
+        <label style="display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--text-secondary);cursor:pointer;"><input type="checkbox" id="smsConsent" /> I agree to prepare this X-ray report for SMS delivery</label>
       </div>
     </div>
 
@@ -3572,7 +4319,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <section class="view" id="view-lab">
       <div class="card">
         <div class="section-heading"><i class="fas fa-vials"></i> Lab Report Upload</div>
-        <div id="labUploadBox" onmouseover="this.style.background='#f0f7fb'" onmouseout="this.style.background=''">
+        <div id="labUploadBox" onmouseover="this.style.background='var(--primary-soft)'" onmouseout="this.style.background=''">
           <i class="fas fa-file-medical" aria-hidden="true"></i>
           <div class="lab-upload-title">Upload Lab Report</div>
           <div class="lab-upload-hint">JPG, PNG, or PDF — lab test results only</div>
@@ -3686,7 +4433,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <section class="view" id="view-performance">
       <div class="card">
         <div class="section-heading"><i class="fas fa-chart-line"></i> Model Performance <span class="tag-sample">sample data — no model connected</span></div>
-        <p style="font-size:.78rem;color:#5a6b7a;margin-bottom:1rem;line-height:1.6;">These metrics are placeholder sample values for layout demonstration only. They do not come from a trained model or a real evaluation run. Connect a real inference service and evaluation pipeline to populate this panel with genuine results.</p>
+        <p style="font-size:.78rem;color:var(--text-secondary);margin-bottom:1rem;line-height:1.6;">These metrics are placeholder sample values for layout demonstration only. They do not come from a trained model or a real evaluation run. Connect a real inference service and evaluation pipeline to populate this panel with genuine results.</p>
         <div class="metrics-grid">
           <div class="metric-tile"><div class="v">0.91</div><div class="k">Accuracy (sample)</div></div>
           <div class="metric-tile"><div class="v">0.88</div><div class="k">Precision (sample)</div></div>
@@ -3719,7 +4466,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <section class="view" id="view-assistant">
       <div class="card">
         <div class="section-heading"><i class="fas fa-comment-medical"></i> AI Assistant</div>
-        <p style="font-size:.8rem;color:#5a6b7a;margin-bottom:1rem;">Ask the optional AI assistant about health topics, lab terminology, diet, lifestyle, or preparing for a doctor visit.</p>
+        <p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:1rem;">Ask the optional AI assistant about health topics, lab terminology, diet, lifestyle, or preparing for a doctor visit.</p>
         <button type="button" class="btn btn-primary" onclick="showView('health-guide')"><i class="fas fa-comment-medical" aria-hidden="true"></i> Open AI Assistant</button>
       </div>
     </section>
@@ -3728,7 +4475,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
     <section class="view" id="view-about">
       <div class="card">
         <div class="section-heading"><i class="fas fa-circle-info"></i> Why NephroScan AI?</div>
-        <p style="font-size:.82rem;color:#3d5a6e;line-height:1.7;">Reviewing medical images is time-consuming and specialist-dependent. NephroScan AI explores how an explainable, transparent decision-support layer could sit alongside a radiologist's workflow — surfacing quality checks, candidate findings, model confidence, and structured reporting, while always deferring the actual diagnosis to a qualified clinician.</p>
+        <p style="font-size:.82rem;color:var(--text-secondary);line-height:1.7;">Reviewing medical images is time-consuming and specialist-dependent. NephroScan AI explores how an explainable, transparent decision-support layer could sit alongside a radiologist's workflow — surfacing quality checks, candidate findings, model confidence, and structured reporting, while always deferring the actual diagnosis to a qualified clinician.</p>
         <div class="about-flow">
           <div class="node">Medical Image</div><span class="arrow">→</span>
           <div class="node">Quality Control</div><span class="arrow">→</span>
@@ -3741,7 +4488,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
       </div>
       <div class="card">
         <div class="section-heading"><i class="fas fa-road"></i> Future Scope</div>
-        <div class="content" style="padding-left:1.4rem;border-left:3px solid rgba(26,92,255,.2);color:#3d5a6e;font-size:.82rem;line-height:2;">
+        <div class="content" style="padding-left:1.4rem;border-left:3px solid var(--border-strong);color:var(--text-secondary);font-size:.82rem;line-height:2;">
           Multi-hospital validation · Larger, more diverse datasets · Federated learning · Additional imaging modalities · Longitudinal monitoring · Clinical workflow integration · Edge / mobile deployment · Multilingual healthcare support
         </div>
       </div>
@@ -3995,12 +4742,12 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
 }
 
 .ns-core-center i {
-  color: #fff;
+  color: var(--on-primary);
   font-size: .9375rem;
 }
 
 .ns-core-center b {
-  color: #fff;
+  color: var(--on-primary);
   font-size: .5rem;
   font-weight: 600;
   letter-spacing: .08em;
@@ -4184,7 +4931,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   left: 2px;
   top: 2px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--knob);
   transition: left var(--dur) var(--ease-out);
   box-shadow: var(--shadow-1);
 }
@@ -4262,7 +5009,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
 }
 
 .ns-buttons button.active {
-  color: #fff;
+  color: var(--on-primary);
   background: var(--primary);
 }
 
@@ -4293,7 +5040,7 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   min-height: 36px;
   padding: var(--s-2) var(--s-4);
   border-radius: var(--r-sm);
-  color: #fff;
+  color: var(--on-primary);
   background: var(--primary);
   cursor: pointer;
   font-family: inherit;
@@ -4360,14 +5107,14 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
 
 #nsClearReports {
   color: var(--danger);
-  border-color: rgba(176, 58, 74, .3);
+  border-color: var(--danger-line);
   background: var(--danger-soft);
 }
 
 #nsClearReports:hover {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
 }
 
 /* =========================================================
@@ -5363,18 +6110,24 @@ body.ns-compact .ns-settings{
     <div class="section-heading"><i class="fas fa-comment-medical" aria-hidden="true"></i> AI Assistant</div>
     <p class="hg-intro">Ask about health topics, lab terminology, diet, lifestyle, or preparing for a doctor visit.</p>
     <div id="healthGuideMessages" class="hg-messages" role="log" aria-live="polite" aria-label="Conversation">
-      <div class="bot-msg bot welcome">Hi — I can help you understand a report, unpack a lab term, or prepare questions for a clinician. Choose a starter below or ask your own question.</div>
+      <div class="bot-msg bot welcome" data-source="local">Hi — I can help you understand a report, unpack a lab term, or prepare questions for a clinician. Choose a starter below or ask your own question.</div>
     </div>
     <div id="healthGuideQuick" class="hg-quick" role="group" aria-label="Guided assistant prompts">
-      <div class="hg-quick-header"><div><span class="hg-quick-kicker">Guided starters</span><strong class="hg-quick-title">What would you like help with?</strong></div><span class="hg-quick-hint">Choose a prompt or ask below</span></div>
-      <div class="hg-prompt-grid">
+      <div class="hg-quick-header">
+        <div class="hg-quick-copy"><span class="hg-quick-kicker">Guided starters</span><strong class="hg-quick-title">What would you like help with?</strong></div>
+        <div class="hg-quick-tools">
+          <span class="hg-quick-hint">Choose a prompt or ask below</span>
+          <button type="button" class="hg-quick-btn" id="healthGuidePromptsToggle" aria-expanded="true" aria-controls="healthGuidePromptGrid"><i class="fas fa-chevron-up" aria-hidden="true"></i><span class="hg-quick-btn-label" data-when="expanded">Hide prompts</span><span class="hg-quick-btn-label" data-when="collapsed">Show prompts</span></button>
+          <button type="button" class="hg-quick-btn is-danger" data-q="clear_chat" id="healthGuideClearBtn"><i class="fas fa-rotate-left" aria-hidden="true"></i><span class="hg-quick-btn-label">Clear chat</span></button>
+        </div>
+      </div>
+      <div class="hg-prompt-grid" id="healthGuidePromptGrid">
         <button type="button" class="hg-prompt" data-q="summarize"><span class="hg-prompt-emoji" aria-hidden="true">🧾</span><span class="hg-prompt-copy"><strong>Summarize my report</strong><small>A calm overview of what was found</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
         <button type="button" class="hg-prompt" data-q="explain_finding"><span class="hg-prompt-emoji" aria-hidden="true">🔍</span><span class="hg-prompt-copy"><strong>Explain a finding</strong><small>Translate a value or model output</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
         <button type="button" class="hg-prompt" data-q="next"><span class="hg-prompt-emoji" aria-hidden="true">🧭</span><span class="hg-prompt-copy"><strong>What should I do next?</strong><small>Prepare a practical clinician conversation</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
         <button type="button" class="hg-prompt" data-q="diet_plan"><span class="hg-prompt-emoji" aria-hidden="true">🥗</span><span class="hg-prompt-copy"><strong>Diet and lifestyle</strong><small>General, report-aware guidance</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
         <button type="button" class="hg-prompt" data-q="ask"><span class="hg-prompt-emoji" aria-hidden="true">🩺</span><span class="hg-prompt-copy"><strong>Questions for my doctor</strong><small>Build a short appointment checklist</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
         <button type="button" class="hg-prompt" data-q="compare" id="healthGuideCompareBtn" style="display:none;"><span class="hg-prompt-emoji" aria-hidden="true">↔️</span><span class="hg-prompt-copy"><strong>Compare reports</strong><small>See what changed between saved results</small></span><i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
-        <button type="button" class="hg-prompt is-danger" data-q="clear_chat" id="healthGuideClearBtn"><span class="hg-prompt-emoji" aria-hidden="true">🧹</span><span class="hg-prompt-copy"><strong>Clear conversation</strong><small>Start a fresh assistant thread</small></span><i class="fas fa-rotate-left" aria-hidden="true"></i></button>
       </div>
     </div>
     <div class="hg-composer">
@@ -5600,9 +6353,29 @@ document.getElementById('qaDemo').addEventListener('click',()=>{ showView('analy
 /* mobile sidebar */
 const sidebar = document.getElementById('sidebar');
 const scrim = document.getElementById('sidebarScrim');
-document.getElementById('hamburgerBtn').addEventListener('click',()=>{ sidebar.classList.add('open'); scrim.classList.add('show'); });
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+function openSidebarMobile(){
+  sidebar.classList.add('open');
+  scrim.classList.add('show');
+  hamburgerBtn.setAttribute('aria-expanded','true');
+  const first = sidebar.querySelector('.nav-item');
+  if(first) first.focus();
+}
+function closeSidebarMobile(){
+  const hadFocus = sidebar.contains(document.activeElement);
+  const wasOpen = sidebar.classList.contains('open');
+  sidebar.classList.remove('open');
+  scrim.classList.remove('show');
+  hamburgerBtn.setAttribute('aria-expanded','false');
+  /* The drawer takes visibility:hidden on close, which drops focus to <body>.
+     Hand it back to the control that opened it. */
+  if(wasOpen && hadFocus) hamburgerBtn.focus();
+}
+hamburgerBtn.addEventListener('click', openSidebarMobile);
 scrim.addEventListener('click', closeSidebarMobile);
-function closeSidebarMobile(){ sidebar.classList.remove('open'); scrim.classList.remove('show'); }
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Escape' && sidebar.classList.contains('open')) closeSidebarMobile();
+});
 
 /* doctor / patient mode */
 function setMode(m){
@@ -5742,7 +6515,7 @@ async function _loadDemoByKey(key, autoRun){
       demoBadge.style.cssText = 'text-align:center;margin-bottom:.5rem;';
       previewGrid.parentNode.insertBefore(demoBadge, previewGrid);
     }
-    demoBadge.innerHTML = '<span style="display:inline-block;padding:.2rem .7rem;border-radius:60px;font-size:.62rem;font-weight:700;background:rgba(22,103,217,.1);color:#1667d9;border:1px solid rgba(22,103,217,.2);">DEMO: ' + pick.label.toUpperCase() + ' — real model inference (' + (file.size/1024).toFixed(0) + ' KB)</span>';
+    demoBadge.innerHTML = '<span style="display:inline-block;padding:.2rem .7rem;border-radius:60px;font-size:.62rem;font-weight:700;background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary-light);">DEMO: ' + pick.label.toUpperCase() + ' — real model inference (' + (file.size/1024).toFixed(0) + ' KB)</span>';
     clinicalIndication.value = pick.indication;
     scanTypeSelect.value = pick.scanType;
     document.getElementById('patientName').value = pick.patient;
@@ -5765,18 +6538,18 @@ function loadDemoCase(){
   var dd = document.createElement('div');
   dd.id = 'demoCaseDropdown';
   dd.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#fff;border:1px solid #dce6ec;border-radius:16px;box-shadow:0 24px 60px rgba(31,79,102,.18);padding:1.2rem 1.4rem;min-width:300px;';
-  dd.innerHTML = '<div style="font-weight:700;font-size:.92rem;color:#1d3c55;margin-bottom:.2rem;">Select a Demo Case</div>' +
-    '<div style="font-size:.72rem;color:#6b7f8d;margin-bottom:.9rem;">Loads a verified medical image and runs real model inference.</div>' +
+  dd.innerHTML = '<div style="font-weight:700;font-size:.92rem;color:var(--text);margin-bottom:.2rem;">Select a Demo Case</div>' +
+    '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.9rem;">Loads a verified medical image and runs real model inference.</div>' +
     DEMO_CASES.map(function(c){
       return '<div class="demo-opt" data-key="' + c.key + '" style="display:flex;align-items:center;gap:10px;padding:.6rem .8rem;border-radius:10px;cursor:pointer;transition:background .15s;border:1px solid #edf2f5;margin-bottom:.4rem;">' +
-        '<div style="width:36px;height:36px;border-radius:8px;background:#f0f7fb;display:flex;align-items:center;justify-content:center;color:#168e99;font-size:.8rem;"><i class="fas fa-' + (c.scanType==='kidney'?'kidneys':c.scanType==='chest_xray'?'lungs':c.scanType==='brain_mri'?'brain':'heart') + '"></i></div>' +
-        '<div><div style="font-weight:600;font-size:.82rem;color:#1d3c55;">' + c.label + '</div>' +
-        '<div style="font-size:.65rem;color:#8493a0;">' + c.scanType.replace('_',' ').toUpperCase() + '</div></div></div>';
+        '<div style="width:36px;height:36px;border-radius:8px;background:var(--primary-soft);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:.8rem;"><i class="fas fa-' + (c.scanType==='kidney'?'kidneys':c.scanType==='chest_xray'?'lungs':c.scanType==='brain_mri'?'brain':'heart') + '"></i></div>' +
+        '<div><div style="font-weight:600;font-size:.82rem;color:var(--text);">' + c.label + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted);">' + c.scanType.replace('_',' ').toUpperCase() + '</div></div></div>';
     }).join('') +
-    '<div style="text-align:right;margin-top:.4rem;"><button id="demoCaseCancel" style="background:none;border:none;color:#8493a0;font-size:.72rem;cursor:pointer;padding:.3rem .6rem;">Cancel</button></div>';
+    '<div style="text-align:right;margin-top:.4rem;"><button id="demoCaseCancel" style="background:none;border:none;color:var(--text-muted);font-size:.72rem;cursor:pointer;padding:.3rem .6rem;">Cancel</button></div>';
   document.body.appendChild(dd);
   dd.querySelectorAll('.demo-opt').forEach(function(opt){
-    opt.addEventListener('mouseenter', function(){ opt.style.background='#f0f7fb'; });
+    opt.addEventListener('mouseenter', function(){ opt.style.background='var(--primary-soft)'; });
     opt.addEventListener('mouseleave', function(){ opt.style.background=''; });
     opt.addEventListener('click', function(){
       dd.remove();
@@ -5872,7 +6645,7 @@ function runAnalysis(){
   const stepEls = [...stepsWrap.children];
 
   resetPlaceholder();
-  reportBody.innerHTML = `<div class="loading-report"><div class="spinner-ring"></div><div class="progress-bar"><div class="fill"></div></div><p><i class="fas fa-microchip"></i> Analysis in progress</p><div style="font-size:.68rem;color:#9aa7b2;">Preparing an illustrative report for clinical review</div></div>`;
+  reportBody.innerHTML = `<div class="loading-report"><div class="spinner-ring"></div><div class="progress-bar"><div class="fill"></div></div><p><i class="fas fa-microchip"></i> Analysis in progress</p><div style="font-size:.68rem;color:var(--text-muted);">Preparing an illustrative report for clinical review</div></div>`;
   document.getElementById('resultsGrid').style.display='none';
 
   let i=0;
@@ -6087,7 +6860,7 @@ function finalizeReport(scanType, indication, modelPrediction, modelConfidence, 
   const emergencyBlock = `<div class="emergency-box"><div class="title"><i class="fas fa-triangle-exclamation"></i> SEEK URGENT CARE IF:</div>${emergency}</div>`;
   const doctorActionBlock = `<div class="report-section doctor-note"><div class="section-title"><i class="fas fa-user-doctor"></i> DOCTOR ACTIONS</div><div class="content">Review the original ${inputLabel} and confirm the AI output with the clinical history, examination, and complete study. Document the final clinician interpretation separately. Do not use this prototype result alone for diagnosis or treatment decisions.</div></div>`;
   const patientGuidanceBlock = `<div class="report-section"><div class="section-title"><i class="fas fa-person"></i> PATIENT GUIDANCE</div><div class="content">This is an AI-assisted educational screening or classification result, not a diagnosis. Share it with a qualified healthcare professional and follow the clinical advice you receive. ${emergency}</div></div>`;
-  const uncertainBlock = uncertain ? `<div class="doctor-note"><strong><i class="fas fa-circle-question"></i> UNCERTAIN RESULT</strong><br/>Confidence is below the configured threshold (${confThreshold}%). Qualified clinical review is recommended.</div>` : '';
+  const uncertainBlock = uncertain ? `<div class="doctor-note" id="uncertainResultNotice"><strong><i class="fas fa-circle-question"></i> UNCERTAIN RESULT</strong><br/>Local model confidence is below the configured review threshold (${confThreshold}%). Hybrid AI review will be requested when the optional API is available; the local prediction remains retained.</div>` : '';
 
   const attentionBlock = `<div class="report-section"><div class="section-title"><i class="fas fa-clipboard-list"></i> AI ANALYSIS SUMMARY</div><div class="content"><b>Prediction:</b> ${label}<br/><b>Confidence:</b> ${confidence}%<br/><b>Model:</b> ${provModel} (v${prov.version || '—'})<br/><br/><b>Limitations:</b> This is an AI-assisted educational screening or classification result. It does not measure disease severity, localize lesions, or replace clinical interpretation. The model outputs are based on pattern recognition in the uploaded image and should be interpreted alongside the full clinical context.<br/><br/><b>Clinician Review:</b> A qualified healthcare professional must review the original scan and correlate the AI output with the patient's history, examination findings, and complete study. Do not use this prototype result alone for diagnosis or treatment decisions.</div></div>`;
 
@@ -6105,9 +6878,9 @@ function finalizeReport(scanType, indication, modelPrediction, modelConfidence, 
   } else {
     nutritionText = 'General balanced nutrition and adequate hydration support overall health. Maintain a varied diet as tolerated.';
   }
-  const nutritionBlock = `<div class="report-section" style="border-left:4px solid #0e7490;background:linear-gradient(135deg,#f0f9fb,#f7fbfd);"><div class="section-title"><i class="fas fa-apple-whole"></i> GENERAL NUTRITION GUIDANCE</div><div class="content">${nutritionText}<br/><br/><em style="font-size:.72rem;color:#6b7f8d;">General supportive information only. Discuss dietary decisions with a qualified clinician or registered dietitian.</em></div></div>`;
+  const nutritionBlock = `<div class="report-section" style="border-left:4px solid var(--accent);background:var(--accent-soft);"><div class="section-title"><i class="fas fa-apple-whole"></i> GENERAL NUTRITION GUIDANCE</div><div class="content">${nutritionText}<br/><br/><em style="font-size:.72rem;color:var(--text-muted);">General supportive information only. Discuss dietary decisions with a qualified clinician or registered dietitian.</em></div></div>`;
   const evidenceSummaryBlock = `<div class="doctor-note" style="border-left:4px solid #2b8cc4;background:linear-gradient(135deg,#eef9fb,#fff8e8);"><div class="section-title"><i class="fas fa-sparkles"></i> AI EVIDENCE SUMMARY <span style="font-size:.58rem;opacity:.7;margin-left:auto;">REPORT ENGINE 3.0</span></div><div class="content"><b>Input:</b> ${inputLabel} · <b>Output:</b> ${outputLabel} · <b>Confidence:</b> ${confidence}%<br/><b>What this means:</b> The model produced an educational prototype result for the selected modality. It does not replace clinical interpretation.</div></div>`;
-  const provenanceDebugBlock = '<div style="margin-top:.5rem;padding:.5rem .7rem;border-radius:8px;background:#f0f4f7;border:1px solid #d7e0e8;font:500 .62rem/1.5 JetBrains Mono,monospace;color:#4a5568;word-break:break-all;"><i class="fas fa-fingerprint" style="margin-right:.3rem;color:#6b7280;"></i> <b style="color:#2d3748;">Provenance:</b> Model: ' + provModel + ' | Class: ' + prediction + ' | Confidence: ' + confidence + '% | Field: ' + provField + ' | Inference: ' + provInference + '</div>';
+  const provenanceDebugBlock = '<div style="margin-top:.5rem;padding:.5rem .7rem;border-radius:8px;background:var(--surface-soft);border:1px solid var(--border);font:500 .62rem/1.5 JetBrains Mono,monospace;color:var(--text-secondary);word-break:break-all;"><i class="fas fa-fingerprint" style="margin-right:.3rem;color:#6b7280;"></i> <b style="color:#2d3748;">Provenance:</b> Model: ' + provModel + ' | Class: ' + prediction + ' | Confidence: ' + confidence + '% | Field: ' + provField + ' | Inference: ' + provInference + '</div>';
   const reportHTML = `
     <div class="report-section"><div class="section-title"><i class="fas fa-id-card"></i> PATIENT</div><div class="content">${patientName} · ${age} yrs · ${gender} · ID: ${patientId}</div></div>
     <div class="report-section"><div class="section-title"><i class="fas fa-stethoscope"></i> CLINICAL INFORMATION</div><div class="content">Indication: ${indication}<br/>Symptoms: ${symptoms}<br/>Doctor: ${doctor} · ${hospital}</div></div>
@@ -6126,6 +6899,9 @@ function finalizeReport(scanType, indication, modelPrediction, modelConfidence, 
     <div class="disclaimer-box">NephroScan AI provides educational AI-assisted imaging support. This is not a medical diagnosis and should not replace evaluation by a qualified healthcare professional.</div>
     <div class="ai-meta"><span><i class="fas fa-hashtag"></i> ${reportId}</span><span><i class="fas fa-cube"></i> AI-assisted analysis · Report Engine 3.0</span><span><i class="fas fa-clock"></i> ${nowStr}</span><span><i class="fas fa-file"></i> ${uploadedFiles.length} scan(s)</span></div>`;
 
+  reportBody.dataset.localPrediction = prediction;
+  reportBody.dataset.localConfidence = String(confidence);
+  reportBody.dataset.localReviewThreshold = String(confThreshold);
   reportBody.innerHTML = reportHTML;
   document.getElementById('reportContainer').scrollIntoView({behavior:'smooth', block:'start'});
   _pendingScanBlob = imgFile || null;
@@ -6422,7 +7198,7 @@ window.__ns_showTimeline = function(patientId){
   var reports = sessionReports.filter(function(r){ return r.patientId === patientId; }).reverse();
   var card = document.getElementById('patientTimelineCard');
   card.style.display = 'block';
-  var html = '<div style="font-size:.72rem;color:#8493a0;margin-bottom:.6rem;">SESSION DATA \u2014 not persisted across page reloads</div>';
+  var html = '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem;">SESSION DATA \u2014 not persisted across page reloads</div>';
   html += reports.map(function(r, i){
     var border = i < reports.length - 1 ? 'border-bottom:1px solid #edf2f5;' : '';
     var modality = r.scanType ? r.scanType.replace('_',' ') : '\u2014';
@@ -6433,13 +7209,13 @@ window.__ns_showTimeline = function(patientId){
     var reviewColor = r.uncertain ? '#b87908' : '#168a62';
     return '<div style="padding:.9rem 0;' + border + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-        '<div style="font-size:.85rem;font-weight:600;color:#1d3c55;">' + (r.dateStr || '\u2014') + '</div>' +
+        '<div style="font-size:.85rem;font-weight:600;color:var(--text);">' + (r.dateStr || '\u2014') + '</div>' +
         '<span style="font-size:.62rem;padding:.2rem .5rem;border-radius:4px;background:' + reviewColor + '18;color:' + reviewColor + ';font-weight:600;">' + reviewStatus + '</span>' +
       '</div>' +
-      '<div style="font-size:.78rem;color:#3d5a6e;margin-top:.3rem;">' +
+      '<div style="font-size:.78rem;color:var(--text-secondary);margin-top:.3rem;">' +
         '<b>Organ:</b> ' + modality + ' · <b>Prediction:</b> ' + pred + ' · <b>Confidence:</b> ' + conf +
       '</div>' +
-      '<div style="font-size:.68rem;color:#8493a0;margin-top:.2rem;">' +
+      '<div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem;">' +
         'Patient: ' + (r.patientName || '\u2014') + ' (' + (r.patientId || '\u2014') + ') · Doctor: ' + (r.doctor || '\u2014') +
       '</div>' +
     '</div>';
@@ -6499,18 +7275,18 @@ document.getElementById('demoCaseBtn').addEventListener('click', function(){
   var dd = document.createElement('div');
   dd.id = 'synthDemoDropdown';
   dd.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#fff;border:1px solid #dce6ec;border-radius:16px;box-shadow:0 24px 60px rgba(31,79,102,.18);padding:1.2rem 1.4rem;min-width:300px;';
-  dd.innerHTML = '<div style="font-weight:700;font-size:.92rem;color:#1d3c55;margin-bottom:.2rem;">Select a Synthetic Demo</div>' +
-    '<div style="font-size:.72rem;color:#6b7f8d;margin-bottom:.9rem;">Precomputed result — no model call.</div>' +
+  dd.innerHTML = '<div style="font-weight:700;font-size:.92rem;color:var(--text);margin-bottom:.2rem;">Select a Synthetic Demo</div>' +
+    '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.9rem;">Precomputed result — no model call.</div>' +
     SYNTH_DEMO_CASES.map(function(c){
       return '<div class="synth-opt" data-key="' + c.key + '" style="display:flex;align-items:center;gap:10px;padding:.6rem .8rem;border-radius:10px;cursor:pointer;transition:background .15s;border:1px solid #edf2f5;margin-bottom:.4rem;">' +
-        '<div style="width:36px;height:36px;border-radius:8px;background:#f0f7fb;display:flex;align-items:center;justify-content:center;color:#168e99;font-size:.8rem;"><i class="fas fa-' + (c.scanType==='kidney'?'kidneys':c.scanType==='chest_xray'?'lungs':c.scanType==='brain_mri'?'brain':'heart') + '"></i></div>' +
-        '<div><div style="font-weight:600;font-size:.82rem;color:#1d3c55;">' + c.label + '</div>' +
-        '<div style="font-size:.65rem;color:#8493a0;">' + c.scanType.replace('_',' ').toUpperCase() + '</div></div></div>';
+        '<div style="width:36px;height:36px;border-radius:8px;background:var(--primary-soft);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:.8rem;"><i class="fas fa-' + (c.scanType==='kidney'?'kidneys':c.scanType==='chest_xray'?'lungs':c.scanType==='brain_mri'?'brain':'heart') + '"></i></div>' +
+        '<div><div style="font-weight:600;font-size:.82rem;color:var(--text);">' + c.label + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted);">' + c.scanType.replace('_',' ').toUpperCase() + '</div></div></div>';
     }).join('') +
-    '<div style="text-align:right;margin-top:.4rem;"><button id="synthDemoCancel" style="background:none;border:none;color:#8493a0;font-size:.72rem;cursor:pointer;padding:.3rem .6rem;">Cancel</button></div>';
+    '<div style="text-align:right;margin-top:.4rem;"><button id="synthDemoCancel" style="background:none;border:none;color:var(--text-muted);font-size:.72rem;cursor:pointer;padding:.3rem .6rem;">Cancel</button></div>';
   document.body.appendChild(dd);
   dd.querySelectorAll('.synth-opt').forEach(function(opt){
-    opt.addEventListener('mouseenter', function(){ opt.style.background='#f0f7fb'; });
+    opt.addEventListener('mouseenter', function(){ opt.style.background='var(--primary-soft)'; });
     opt.addEventListener('mouseleave', function(){ opt.style.background=''; });
     opt.addEventListener('click', function(){
       dd.remove();
@@ -6554,10 +7330,75 @@ var _hgChatHistory = [];
 var _hgLastAction = null;
 var _hgPreviousContext = null;
 
+function _hgRenderMessageText(el, text, animate){
+  if(!animate){ el.textContent = text; return; }
+  var wordIndex = 0;
+  text.split(/(\s+)/).forEach(function(part){
+    if(!part) return;
+    if(/^\s+$/.test(part)) el.appendChild(document.createTextNode(part));
+    else {
+      var word = document.createElement('span');
+      word.className = 'hg-word';
+      word.style.setProperty('--word-index', Math.min(wordIndex++, 35));
+      word.textContent = part;
+      el.appendChild(word);
+    }
+  });
+}
+
+function _hgSetChatLoading(active, label){
+  var existing = document.getElementById('healthGuideLoading');
+  if(existing) existing.remove();
+  if(!active) return;
+  var el = document.createElement('div');
+  el.id = 'healthGuideLoading';
+  el.className = 'bot-msg bot hg-loading';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  for(var i = 0; i < 3; i++){
+    var dot = document.createElement('span');
+    dot.className = 'loading-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    el.appendChild(dot);
+  }
+  var copy = document.createElement('span');
+  copy.className = 'hg-loading-label';
+  copy.textContent = label || 'Preparing guidance…';
+  el.appendChild(copy);
+  healthGuideMessages.appendChild(el);
+  healthGuideMessages.scrollTop = healthGuideMessages.scrollHeight;
+}
+
+function _hgPromptsCollapsed(){
+  var grid = document.getElementById('healthGuidePromptGrid');
+  return !!grid && grid.classList.contains('is-collapsed');
+}
+
+function _hgSetPromptCollapsed(collapsed){
+  var grid = document.getElementById('healthGuidePromptGrid');
+  if(!grid) return;
+  /* Move focus out before the grid becomes inert, or the focused button is
+     left inside an aria-hidden, untabbable subtree. */
+  if(collapsed && grid.contains(document.activeElement)){
+    var input = document.getElementById('healthGuideInput');
+    if(input) input.focus();
+  }
+  grid.classList.toggle('is-collapsed', collapsed);
+  grid.setAttribute('aria-hidden', String(collapsed));
+  grid.querySelectorAll('button').forEach(function(button){ button.tabIndex = collapsed ? -1 : 0; });
+  var toggle = document.getElementById('healthGuidePromptsToggle');
+  if(toggle) toggle.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function _hgPromptLabel(key){
+  return ({ summarize:'Summarize my report', explain_finding:'Explain a finding', next:'What should I do next?', diet_plan:'Diet and lifestyle', ask:'Questions for my doctor', compare:'Compare reports' })[key] || key;
+}
+
 function _healthGuideAddMsg(text, who, skipHistory){
   var el = document.createElement('div');
   el.className = 'bot-msg ' + who;
-  el.textContent = text;
+  if(who === 'bot') el.dataset.source = 'local';
+  _hgRenderMessageText(el, text, who === 'bot');
   healthGuideMessages.appendChild(el);
   healthGuideMessages.scrollTop = healthGuideMessages.scrollHeight;
   if(!skipHistory){
@@ -6965,6 +7806,7 @@ function _healthGuideReply(userText){
   return _hgOpenEndedGeneralReply(t);
 }
 
+window.__nephroLocalChatReply = _healthGuideReply;
 function _hgImagingDietLifestyle(scanType){
   var s = (scanType || '').toLowerCase();
   if(s.includes('kidney')){
@@ -6993,11 +7835,15 @@ function _hgLabDietLifestyle(d){
 }
 
 document.getElementById('healthGuideSendBtn').addEventListener('click', function(){
+  if(window.__nephroTypedChat) return;
   var val = healthGuideInput.value.trim();
   if(!val) return;
   _healthGuideAddMsg(val, 'user');
+  _hgSetPromptCollapsed(true);
+  _hgSetChatLoading(true, 'Preparing local guidance…');
   healthGuideInput.value = '';
   setTimeout(function(){
+    _hgSetChatLoading(false);
     var reply = _healthGuideReply(val);
     if(reply !== null) _healthGuideAddMsg(reply, 'bot');
   }, 350);
@@ -7005,15 +7851,23 @@ document.getElementById('healthGuideSendBtn').addEventListener('click', function
 healthGuideInput.addEventListener('keydown', function(e){ if(e.key==='Enter') document.getElementById('healthGuideSendBtn').click(); });
 
 document.getElementById('healthGuideQuick').addEventListener('click', function(e){
-  var btn = e.target.closest('button');
+  if(e.target.closest('#healthGuidePromptsToggle')){
+    _hgSetPromptCollapsed(!_hgPromptsCollapsed());
+    return;
+  }
+  var btn = e.target.closest('button[data-q]');
   if(!btn) return;
   var q = btn.dataset.q;
   if(q === 'clear_chat'){
     _healthGuideClearChat();
+    _hgSetPromptCollapsed(false);
     return;
   }
-  _healthGuideAddMsg(q, 'user');
+  _healthGuideAddMsg(_hgPromptLabel(q), 'user');
+  _hgSetPromptCollapsed(true);
+  _hgSetChatLoading(true, 'Preparing local guidance…');
   setTimeout(function(){
+    _hgSetChatLoading(false);
     var reply = _healthGuideReply(q);
     if(reply !== null) _healthGuideAddMsg(reply, 'bot');
   }, 350);
@@ -7183,7 +8037,7 @@ function _labRenderExtractionTable(){
         '<option value="Below stated range"' + (t.status==='Below stated range'?' selected':'') + '>Below stated range</option>' +
         '<option value="Needs review"' + (t.status==='Needs review'?' selected':'') + '>Needs review</option>' +
       '</select></td>' +
-      '<td><span style="font-size:.72rem;color:#6b7f8d;">' + _labEsc(t.confidence) + '</span></td>' +
+      '<td><span style="font-size:.72rem;color:var(--text-muted);">' + _labEsc(t.confidence) + '</span></td>' +
       '<td><button class="lab-rm" data-rmidx="' + i + '" title="Remove"><i class="fas fa-trash" style="color:var(--danger);font-size:.75rem;"></i></button></td>';
     body.appendChild(tr);
   });

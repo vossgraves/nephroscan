@@ -118,10 +118,13 @@ struct AiConfig {
 #[derive(Debug)]
 enum AppError {
     BadRequest(&'static str),
+    UnsupportedType(&'static str),
     TooLarge(&'static str),
     NotFound(&'static str),
     Unavailable(&'static str),
     Upstream(&'static str),
+    UpstreamRateLimited(&'static str),
+    UpstreamTimeout(&'static str),
     Internal(&'static str),
 }
 
@@ -129,26 +132,32 @@ impl AppError {
     fn status(&self) -> StatusCode {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Self::UnsupportedType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Upstream(_) => StatusCode::BAD_GATEWAY,
+            Self::UpstreamRateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
+            Self::UpstreamTimeout(_) => StatusCode::GATEWAY_TIMEOUT,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
     fn code(&self) -> &'static str {
         match self {
             Self::BadRequest(_) => "invalid_request",
+            Self::UnsupportedType(_) => "unsupported_type",
             Self::TooLarge(_) => "payload_too_large",
             Self::NotFound(_) => "not_found",
             Self::Unavailable(_) => "unavailable",
             Self::Upstream(_) => "upstream_error",
+            Self::UpstreamRateLimited(_) => "upstream_rate_limited",
+            Self::UpstreamTimeout(_) => "upstream_timeout",
             Self::Internal(_) => "internal_error",
         }
     }
     fn message(&self) -> &'static str {
         match self {
-            Self::BadRequest(m) | Self::TooLarge(m) | Self::NotFound(m) | Self::Unavailable(m) | Self::Upstream(m) | Self::Internal(m) => m,
+            Self::BadRequest(m) | Self::UnsupportedType(m) | Self::TooLarge(m) | Self::NotFound(m) | Self::Unavailable(m) | Self::Upstream(m) | Self::UpstreamRateLimited(m) | Self::UpstreamTimeout(m) | Self::Internal(m) => m,
         }
     }
 }
@@ -156,7 +165,7 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status();
-        let body = Json(json!({"status": if status == StatusCode::SERVICE_UNAVAILABLE { "disabled" } else { "error" }, "code": self.code(), "error": self.message(), "message": self.message(), "disclaimer": API_DISCLAIMER}));
+        let body = Json(json!({"status": if status == StatusCode::SERVICE_UNAVAILABLE { "disabled" } else { "error" }, "code": self.code(), "error": self.message(), "message": self.message(), "request_id": request_id(), "disclaimer": API_DISCLAIMER}));
         (status, body).into_response()
     }
 }
@@ -471,7 +480,8 @@ async fn call_ai(state: &AppState, model: &str, messages: Vec<Value>, json_mode:
     let key = state.ai.api_key.as_ref().ok_or(AppError::Unavailable("AI provider is not configured"))?;
     let mut body = json!({"model":model,"messages":messages,"temperature":0.2,"max_tokens":700});
     if json_mode { body["response_format"] = json!({"type":"json_object"}); }
-    let response = state.http.post(format!("{}/chat/completions", state.ai.base_url)).bearer_auth(key).json(&body).timeout(state.ai.timeout).send().await.map_err(|_| AppError::Upstream("AI provider request failed"))?;
+    let response = state.http.post(format!("{}/chat/completions", state.ai.base_url)).bearer_auth(key).json(&body).timeout(state.ai.timeout).send().await.map_err(|error| if error.is_timeout() { AppError::UpstreamTimeout("AI provider request timed out") } else { AppError::Upstream("AI provider request failed") })?;
+    if response.status() == StatusCode::TOO_MANY_REQUESTS { return Err(AppError::UpstreamRateLimited("AI provider rate limit reached")); }
     if !response.status().is_success() { return Err(AppError::Upstream("AI provider returned an error")); }
     let value: Value = response.json().await.map_err(|_| AppError::Upstream("AI provider returned invalid JSON"))?;
     let content = value.get("choices").and_then(Value::as_array).and_then(|a| a.first()).and_then(|v| v.get("message")).and_then(|m| m.get("content"));
@@ -483,7 +493,7 @@ async fn ai_analyze_image(State(state): State<AppState>, multipart: Multipart) -
     let id = request_id();
     if state.ai.api_key.is_none() { return Err(ai_disabled(&id).into_response()); }
     let (bytes, content_type, fields) = multipart_image(multipart, "image", MAX_AI_IMAGE_BYTES).await.map_err(|e| e.into_response())?;
-    let mime = match content_type.as_str() { "image/jpeg" | "image/jpg" | "image/png" | "image/webp" => content_type, _ => return Err(AppError::BadRequest("unsupported image type").into_response()) };
+    let mime = match content_type.as_str() { "image/jpeg" | "image/jpg" | "image/png" | "image/webp" => content_type, _ => return Err(AppError::UnsupportedType("unsupported image type").into_response()) };
     let scan_type = fields.get("scan_type").map(|s| truncate_chars(s.trim(), 80)).unwrap_or_else(|| "unspecified".into());
     let context = fields.get("context").map(|s| truncate_chars(s, MAX_CONTEXT_CHARS)).unwrap_or_default();
     let _validated_image = decode_bounded(&bytes, 2048).map_err(|e| e.into_response())?;
@@ -511,7 +521,7 @@ async fn ai_chat(State(state): State<AppState>, body: Bytes) -> Result<Json<Valu
     let value: Value = serde_json::from_slice(&body).map_err(|_| AppError::BadRequest("request body must be valid JSON").into_response())?;
     let history = ai_messages(&value).map_err(|e| e.into_response())?;
     let context = context_text(value.get("context"));
-    let mut messages = vec![json!({"role":"system","content":"You are a cautious educational health assistant. Answer clearly, avoid diagnosis, and recommend qualified clinical care for concerning symptoms."})];
+    let mut messages = vec![json!({"role":"system","content":"You are a calm educational health assistant. Return exactly three sections in this order, each starting at the beginning of its line with the literal labels `Answer:`, `Consider:`, and `Next step:`. Do not use Markdown heading markers (#), bullets, blockquotes, or any other prefix before these labels. Format the response as: Answer: one or two concise sentences; Consider: up to three concise considerations; Next step: one concise sentence. Use supplied report context when relevant. Do not diagnose or prescribe, and mention uncertainty only when it changes the advice. The interface adds a brief attribution footer."})];
     if !context.is_empty() { messages.push(json!({"role":"system","content":format!("User context (untrusted): {context}")})); }
     messages.extend(history);
     let text = call_ai(&state, &state.ai.chat_model, messages, false).await.map_err(|e| e.into_response())?;

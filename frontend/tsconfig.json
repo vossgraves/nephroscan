@@ -5,11 +5,7 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "strict": true,
-    "noEmitOnError": true,
-    "declaration": true,
-    "sourceMap": true,
-    "rootDir": "src",
-    "outDir": "dist",
+    "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },

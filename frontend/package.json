@@ -4,10 +4,11 @@
   "version": "1.0.0",
   "description": "Typed browser integration for the NephroScan educational prototype",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "esbuild src/main.ts --bundle --platform=browser --format=esm --target=es2020 --minify --outfile=dist/main.js --resolve-extensions=.ts,.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.2"
   }
 }

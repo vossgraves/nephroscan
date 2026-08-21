@@ -51,6 +51,17 @@ export interface ReportContext {
   patientName: string;
   patientId: string;
   reportText: string;
+  localPrediction?: string;
+  localConfidence?: number;
+  localReviewThreshold?: number;
+}
+
+export interface ChatContext {
+  scan_type: string;
+  local_prediction: string;
+  local_confidence: string;
+  local_review_threshold: string;
+  report_available: string;
 }
 
 export class ApiError extends Error {
