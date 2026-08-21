@@ -3702,6 +3702,30 @@ body:has(.sidebar-scrim.show) .health-guide-fab {
   }
 }
 
+:root[data-theme="dark"] #demoCaseDropdown,
+:root[data-theme="dark"] #synthDemoDropdown {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  box-shadow: var(--shadow-3) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="dark"] #demoCaseDropdown .demo-opt,
+:root[data-theme="dark"] #synthDemoDropdown .synth-opt {
+  background: var(--surface-soft) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="dark"] #demoCaseDropdown .demo-opt > div:last-child > div:first-child,
+:root[data-theme="dark"] #synthDemoDropdown .synth-opt > div:last-child > div:first-child {
+  color: var(--text) !important;
+}
+
+:root[data-theme="dark"] #demoCaseDropdown .demo-opt > div:last-child > div:last-child,
+:root[data-theme="dark"] #synthDemoDropdown .synth-opt > div:last-child > div:last-child {
+  color: var(--text-muted) !important;
+}
 </style>
 
 </head>
