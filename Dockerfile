@@ -52,6 +52,6 @@ EXPOSE 8080
 
 # Rust runs as one process/instance to fit Render's 512 MB free tier.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD-SHELL curl --fail --silent "http://127.0.0.1:${PORT:-8080}/api/health" >/dev/null || exit 1
+  CMD curl --fail --silent "http://127.0.0.1:${PORT:-8080}/api/health" >/dev/null || exit 1
 
 CMD ["./nephroscan-backend"]
